@@ -116,7 +116,7 @@ Render can only create an image-based service from an image that already exists,
    | `DATABASE_URL` | Neon **main** pooled string |
    | `DIRECT_DATABASE_URL` | Neon **main** direct string |
    | `JWT_ACCESS_SECRET` | New secret: `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
-   | `WEB_ORIGIN` | `https://myfinances.vercel.app` (update after step 4 if Vercel gives a different URL) |
+   | `WEB_ORIGIN` | `https://myfinances-gamma.vercel.app` |
    | `GOOGLE_CLIENT_IDS` | Web, Android and iOS client IDs, comma-separated |
    | `DEFAULT_CURRENCY` | `INR` |
    | R2 variables | Added once the R2 storage driver exists |
@@ -136,7 +136,7 @@ Repeat 3.3 with these differences:
 | Name | `myfinances-api-staging` |
 | `DATABASE_URL` / `DIRECT_DATABASE_URL` | Neon **staging** strings |
 | `JWT_ACCESS_SECRET` | A **different** new secret, so staging tokens never work in production |
-| `WEB_ORIGIN` | `https://myfinances.vercel.app`. Previews call the API through Vercel's `/api` forwarding, so the browser makes no cross-origin requests and this value barely matters. |
+| `WEB_ORIGIN` | `https://myfinances-staging.vercel.app` (the fixed staging alias). Previews call the API through Vercel's `/api` forwarding, so the browser makes no cross-origin requests and this value barely matters. |
 
 Copy its deploy hook separately.
 
@@ -265,7 +265,7 @@ The `staging` environment can stay at **No restriction**: only `feature/*` branc
 
 In Google Cloud Console, go to **APIs & Services → Credentials → your Web client**:
 
-1. **Authorized JavaScript origins:** add `https://myfinances.vercel.app`.
+1. **Authorized JavaScript origins:** add `https://myfinances-gamma.vercel.app`.
 2. Preview URLs change per branch, and Google doesn't allow wildcard origins. So **Google sign-in only works in production**; use email/password on previews.
    - To test Google sign-in on one particular branch, add its stable URL: `https://myfinances-git-<branch>-<your-scope>.vercel.app`.
 3. Check that the API's `GOOGLE_CLIENT_IDS` (both Render services) includes the web client ID and the mobile client IDs.
@@ -302,7 +302,7 @@ Mobile gets its refresh token in the response body, so it calls Render directly.
 1. Push a small change to a feature branch.
 2. In the **Actions** tab, check that `checks` → `api` (staging) → `web` (preview) all pass.
 3. Open the preview URL from the job summary and sign up. The account is stored in the Neon `staging` branch.
-4. Merge to `main`. Check the production run, then open `https://myfinances.vercel.app`.
+4. Merge to `main`. Check the production run, then open `https://myfinances-gamma.vercel.app`.
 5. If something fails, look here:
 
    | Where | What you'll find |
