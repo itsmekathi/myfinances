@@ -15,6 +15,9 @@ coverage/
 .env.*
 !.env.example
 
+# Vercel CLI (local project link)
+.vercel/
+
 # Expo / React Native
 .expo/
 .metro-health-check*

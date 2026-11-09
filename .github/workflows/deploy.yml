@@ -1,0 +1,153 @@
+# Checks every push, then deploys:
+#   main             -> production  (Render prod API, Vercel production)
+#   any other branch -> staging     (Render staging API, Vercel preview)
+# Deploy steps are skipped (with a warning) until their secrets are configured.
+# Setup: deployment/setup-guide.md
+name: CI / Deploy
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/myfinances-api
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The e2e setup appends _test to the database name and creates it.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myfinances?schema=public
+      JWT_ACCESS_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test:e2e
+
+  api:
+    name: api (${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }})
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Deploy to Render
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          IMG: ${{ env.IMAGE }}:${{ github.sha }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK is not set for this environment; skipping the Render deploy."
+            exit 0
+          fi
+          img=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$IMG")
+          curl -fsS -X POST "$HOOK&imgURL=$img" > /dev/null
+          echo "Render deploy triggered for \`$IMG\`" >> "$GITHUB_STEP_SUMMARY"
+
+  web:
+    name: web (${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }})
+    needs: api
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      API_URL: ${{ secrets.API_URL }}
+      VERCEL_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
+      PROD_FLAG: ${{ github.ref == 'refs/heads/main' && '--prod' || '' }}
+    steps:
+      - name: Check Vercel secrets
+        id: guard
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::warning::Vercel secrets are not set; skipping the frontend deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.enabled == 'true'
+        uses: actions/checkout@v5
+      - if: steps.guard.outputs.enabled == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.guard.outputs.enabled == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Point /api at this environment's API
+        if: steps.guard.outputs.enabled == 'true'
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "::error::API_URL is not set for this environment."
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            const file = "apps/web/vercel.json";
+            const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+            const api = process.env.API_URL.replace(/\/+$/, "");
+            cfg.rewrites.find((r) => r.source === "/api/:path*").destination = `${api}/api/:path*`;
+            fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
+          '
+      - name: Build and deploy to Vercel
+        if: steps.guard.outputs.enabled == 'true'
+        run: |
+          npm install -g vercel@latest
+          vercel pull --yes --environment="$VERCEL_ENV" --token="$VERCEL_TOKEN"
+          vercel build $PROD_FLAG --token="$VERCEL_TOKEN"
+          url=$(vercel deploy --prebuilt $PROD_FLAG --token="$VERCEL_TOKEN")
+          echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"

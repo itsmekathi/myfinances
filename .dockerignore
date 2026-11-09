@@ -1,0 +1,21 @@
+# Build context is the repo root (see apps/api/Dockerfile).
+.git
+.github
+deployment
+**/node_modules
+**/dist
+**/.turbo
+**/.vercel
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+apps/api/storage
+apps/api/src/generated
+
+# The API image only needs these apps' package.json (to match the lockfile).
+apps/web/**
+!apps/web/package.json
+apps/mobile/**
+!apps/mobile/package.json
+packages/api-client/**
+!packages/api-client/package.json

@@ -8,7 +8,9 @@ export default defineConfig({
   migrations: {
     path: "prisma/migrations",
   },
+  // CLI only (migrate, studio). Migrations need a direct connection, not a pooler,
+  // so hosted setups set DIRECT_DATABASE_URL. The app itself uses DATABASE_URL.
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DIRECT_DATABASE_URL"] ?? process.env["DATABASE_URL"],
   },
 });
