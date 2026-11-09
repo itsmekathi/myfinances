@@ -9,7 +9,7 @@ One-time setup for the free-tier hosting and the GitHub Actions deployment pipel
 
 | Event | Checks | Frontend (Vercel) | Backend (Render) | Database (Neon) |
 |---|---|---|---|---|
-| Push to a feature branch or PR | typecheck, build, e2e | **Preview** deploy, unique URL per branch | **Staging** API service | `staging` branch |
+| Push to `feature/<name>` | branch name, typecheck, build, e2e | **Preview** deploy, unique URL per branch | **Staging** API service | `staging` branch |
 | Push or merge to `main` | same | **Production** deploy | **Production** API service | `main` branch |
 
 The workflow (`.github/workflows/deploy.yml`) runs three jobs in sequence:
@@ -194,7 +194,7 @@ Create `production` and `staging`. Each gets the same secret names with differen
 | Secret | `production` | `staging` |
 |---|---|---|
 | `RENDER_DEPLOY_HOOK` | Production deploy hook URL | Staging deploy hook URL |
-| `API_URL` | `https://myfinances-api.onrender.com` | `https://myfinances-api-staging.onrender.com` |
+| `API_URL` | `https://myfinances-api-0km5.onrender.com` | `https://myfinances-api-staging.onrender.com` |
 
 For `production`:
 - **Deployment branches:** choose **Selected branches → `main`**. A feature branch then can't deploy to production, even if the workflow is edited by mistake.
@@ -219,7 +219,42 @@ Go to **Settings → Branches → Add rule** for `main`:
 
 Changes then reach production only after review and green tests.
 
-### 5.4 Actions usage
+### 5.4 Enforce branch naming
+
+Branches must be `main` or `feature/<name-or-issue-number>`:
+
+- lowercase letters, digits and hyphens only
+- for example `feature/42`, `feature/add-budgets` or `feature/42-add-budgets`
+
+This is enforced twice:
+
+| Layer | What it does |
+|---|---|
+| **GitHub ruleset** (blocks the push) | Rejects pushing a new branch that isn't `main` or `feature/*`. Defined in `.github/rulesets/branch-naming.json`. |
+| **Workflow check** (fails the run) | The first step of `checks` validates the full format (e.g. rejects `feature/Add_Thing`) and fails with a rename hint. |
+
+Import the ruleset once:
+
+1. In the repo, go to **Settings → Rules → Rulesets**.
+2. Click **New ruleset → Import a ruleset** and choose `.github/rulesets/branch-naming.json` from your local checkout.
+3. Check that it shows:
+   - **Enforcement status:** Active
+   - **Target:** all branches, excluding `main` and `feature/*`
+   - **Rule:** Restrict creations
+4. Click **Create**.
+
+To test it, run `git push origin HEAD:test-branch`. GitHub should reject it with a ruleset violation.
+
+To fix a misnamed local branch:
+
+```sh
+git branch -m feature/<name>
+git push -u origin feature/<name>
+```
+
+The `staging` environment can stay at **No restriction**: only `feature/*` branches can exist and pass checks.
+
+### 5.5 Actions usage
 
 - Public repos: unlimited free minutes.
 - Private repos: 2,000 free minutes a month. A run takes a few minutes, so that's plenty for this project.
@@ -243,7 +278,7 @@ Render's free services sleep after 15 minutes without traffic and take about a m
 
 1. Sign up at **cron-job.org** (free).
 2. Create a job:
-   - URL: `https://myfinances-api.onrender.com/api/health`
+   - URL: `https://myfinances-api-0km5.onrender.com/api/health`
    - Schedule: every **10 minutes**
 3. **Don't** ping staging. Letting it sleep keeps both services within Render's 750 free hours a month.
 
@@ -256,7 +291,7 @@ Set `EXPO_PUBLIC_API_URL` per build profile:
 | Build | Value |
 |---|---|
 | Development / internal | `https://myfinances-api-staging.onrender.com/api` |
-| Production | `https://myfinances-api.onrender.com/api` |
+| Production | `https://myfinances-api-0km5.onrender.com/api` |
 
 Mobile gets its refresh token in the response body, so it calls Render directly. It doesn't need the Vercel `/api` forwarding.
 
