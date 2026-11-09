@@ -1,6 +1,8 @@
 # Checks every push, then deploys:
 #   main             -> production  (Render prod API, Vercel production)
-#   any other branch -> staging     (Render staging API, Vercel preview)
+#   feature/<name>   -> staging     (Render staging API, Vercel preview)
+# Any other branch name fails the first step. GitHub also blocks creating such
+# branches via the "Branch naming" ruleset (.github/rulesets/branch-naming.json).
 # Deploy steps are skipped (with a warning) until their secrets are configured.
 # Setup: deployment/setup-guide.md
 name: CI / Deploy
@@ -41,6 +43,18 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myfinances?schema=public
       JWT_ACCESS_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
     steps:
+      - name: Check branch name
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          # main, or feature/<name>: lowercase letters, digits and hyphens,
+          # e.g. feature/42, feature/add-budgets, feature/42-add-budgets
+          if [ "$BRANCH" = "main" ] || echo "$BRANCH" | grep -Eq '^feature/[a-z0-9]+(-[a-z0-9]+)*$'; then
+            echo "Branch name OK: $BRANCH"
+          else
+            echo "::error::Branch '$BRANCH' does not match feature/<name-or-issue-number> (lowercase letters, digits, hyphens). Rename it: git branch -m feature/<name>"
+            exit 1
+          fi
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5

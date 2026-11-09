@@ -14,6 +14,13 @@ MyFinances is an expense tracker in a pnpm + Turborepo monorepo:
 
 The web and mobile apps consume the shared packages from their compiled `dist/`. **After editing `packages/shared` or `packages/api-client`, run `pnpm --filter <pkg> build`.** Otherwise the apps keep seeing the old code. The API's `nest --watch` only restarts after a successful compile, so if a shared rebuild races with it, touch a file in `apps/api/src`.
 
+## Branches and deployment
+
+- Branch names must be `main` or `feature/<name-or-issue-number>`: lowercase letters, digits and hyphens (e.g. `feature/42-add-budgets`).
+- This is enforced by a GitHub ruleset (`.github/rulesets/branch-naming.json`) and by the first step of CI.
+- `.github/workflows/deploy.yml` deploys `main` to production and `feature/*` branches to staging (Render API and Vercel).
+- See `deployment/` for the hosting decisions and the setup guide.
+
 ## Commands
 
 Run from the repo root unless noted.

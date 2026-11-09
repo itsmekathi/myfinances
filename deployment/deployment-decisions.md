@@ -23,7 +23,7 @@ Host all of MyFinances (web, API, PostgreSQL, file attachments) at no cost:
 | Mobile (`apps/mobile`) | Calls the Render URL directly | — |
 
 ```
-Browser ──► Vercel (myfinances.vercel.app)
+Browser ──► Vercel (myfinances-gamma.vercel.app)
               ├── /*      → static React build
               └── /api/*  → forwarded to Render ──► Neon (Postgres)
                                                 └─► R2 (attachments)
