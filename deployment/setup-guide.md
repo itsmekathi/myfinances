@@ -136,7 +136,7 @@ Repeat 3.3 with these differences:
 | Name | `myfinances-api-staging` |
 | `DATABASE_URL` / `DIRECT_DATABASE_URL` | Neon **staging** strings |
 | `JWT_ACCESS_SECRET` | A **different** new secret, so staging tokens never work in production |
-| `WEB_ORIGIN` | `https://myfinances-staging.vercel.app` (the fixed staging alias). Previews call the API through Vercel's `/api` forwarding, so the browser makes no cross-origin requests and this value barely matters. |
+| `WEB_ORIGIN` | `https://<STAGING_WEB_DOMAIN>` (the fixed staging domain, see 5.1). Previews call the API through Vercel's `/api` forwarding, so the browser makes no cross-origin requests and this value barely matters. |
 
 Copy its deploy hook separately.
 
@@ -195,6 +195,18 @@ Create `production` and `staging`. Each gets the same secret names with differen
 |---|---|---|
 | `RENDER_DEPLOY_HOOK` | Production deploy hook URL | Staging deploy hook URL |
 | `API_URL` | `https://myfinances-api-0km5.onrender.com` | `https://myfinances-api-staging.onrender.com` |
+
+For `staging`, also add an **environment variable** (not a secret; under **Environment variables** on the same page):
+
+| Variable | Value |
+|---|---|
+| `STAGING_WEB_DOMAIN` | A free `*.vercel.app` name, e.g. `myfinances-gamma-staging.vercel.app` |
+
+After each feature-branch preview deploy, the workflow points this domain at the new preview. Staging then has one fixed web URL:
+- use it as the staging API's `WEB_ORIGIN`
+- add it as a Google OAuth origin
+
+If the name is already taken on Vercel, the step fails; pick another name. Leave the variable unset to skip this step.
 
 For `production`:
 - **Deployment branches:** choose **Selected branches → `main`**. A feature branch then can't deploy to production, even if the workflow is edited by mistake.
@@ -307,7 +319,7 @@ Mobile gets its refresh token in the response body, so it calls Render directly.
 
    | Where | What you'll find |
    |---|---|
-   | **Render → service → Logs** | Migration and env-validation errors show up here first |
+   | **Render → service → Logs** | Migration and env-validation errors show up here first. A `[deploy check]` line means `DIRECT_DATABASE_URL` is missing, invalid, or points at the pooler (`apps/api/scripts/check-deploy-env.js`). |
    | **Vercel → Deployments** | Frontend build output |
    | **Neon → Monitoring** | Database connections and compute usage |
    | **GitHub → Actions** | Which job failed and why |

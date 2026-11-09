@@ -37,5 +37,5 @@ ENV NODE_ENV=production
 WORKDIR /app/apps/api
 EXPOSE 3000
 
-# Apply pending migrations, then start. Render provides PORT.
-CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && exec node dist/main.js"]
+# Check database env vars, apply pending migrations, then start. Render provides PORT.
+CMD ["sh", "-c", "node scripts/check-deploy-env.js && ./node_modules/.bin/prisma migrate deploy && exec node dist/main.js"]

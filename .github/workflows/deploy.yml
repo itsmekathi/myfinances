@@ -158,10 +158,23 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
           '
       - name: Build and deploy to Vercel
+        id: deploy
         if: steps.guard.outputs.enabled == 'true'
         run: |
           npm install -g vercel@latest
           vercel pull --yes --environment="$VERCEL_ENV" --token="$VERCEL_TOKEN"
           vercel build $PROD_FLAG --token="$VERCEL_TOKEN"
           url=$(vercel deploy --prebuilt $PROD_FLAG --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
+      # Gives staging one fixed URL (the latest feature-branch preview), so it can be
+      # used as the staging WEB_ORIGIN and as a Google OAuth origin.
+      # Set the STAGING_WEB_DOMAIN variable on the staging environment to enable it.
+      - name: Point the staging domain at this preview
+        if: steps.guard.outputs.enabled == 'true' && github.ref != 'refs/heads/main' && vars.STAGING_WEB_DOMAIN != ''
+        env:
+          DOMAIN: ${{ vars.STAGING_WEB_DOMAIN }}
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          vercel alias set "$URL" "$DOMAIN" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+          echo "Staging: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
