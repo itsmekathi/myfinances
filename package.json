@@ -1,0 +1,21 @@
+{
+  "name": "myfinances",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "scripts": {
+    "dev": "turbo run dev --filter=@myfinances/api --filter=@myfinances/web",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "dev:api": "pnpm --filter @myfinances/api dev",
+    "dev:web": "pnpm --filter @myfinances/web dev",
+    "dev:mobile": "pnpm --filter @myfinances/mobile start",
+    "db:migrate": "pnpm --filter @myfinances/api db:migrate",
+    "test:e2e": "pnpm --filter @myfinances/api test:e2e"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.10",
+    "typescript": "~5.9.3"
+  }
+}

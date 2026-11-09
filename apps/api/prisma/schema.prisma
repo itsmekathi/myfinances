@@ -1,0 +1,201 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AuthProvider {
+  google
+}
+
+enum WorkspaceRole {
+  owner
+  editor
+  viewer
+}
+
+enum PaymentMethod {
+  cash
+  card
+  upi
+  bank_transfer
+  wallet
+  other
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique
+  /// True once a trusted provider (e.g. Google) has confirmed the email.
+  emailVerified Boolean   @default(false)
+  username      String?   @unique
+  displayName   String?
+  avatarUrl     String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  identities    AuthIdentity[]
+  refreshTokens RefreshToken[]
+  memberships   WorkspaceMember[]
+  expenses        Expense[] @relation("ExpenseCreatedBy")
+  updatedExpenses Expense[] @relation("ExpenseUpdatedBy")
+  attachments     Attachment[]
+}
+
+/// External sign-in providers linked to a user (Google now; Apple/GitHub later).
+model AuthIdentity {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @db.Uuid
+  provider       AuthProvider
+  providerUserId String
+  createdAt      DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+}
+
+/// Rotating refresh tokens. Only a SHA-256 hash is stored.
+/// All tokens from one login share a familyId so reuse of an old token revokes the whole family.
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  familyId   String    @db.Uuid
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model Workspace {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  baseCurrency String   @db.Char(3)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members    WorkspaceMember[]
+  categories Category[]
+  expenses   Expense[]
+}
+
+model WorkspaceMember {
+  workspaceId String        @db.Uuid
+  userId      String        @db.Uuid
+  role        WorkspaceRole
+  createdAt   DateTime      @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+}
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  name        String
+  icon        String?
+  color       String?  @db.Char(7)
+  parentId    String?  @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Category[] @relation("CategoryTree")
+  expenses      Expense[] @relation("ExpenseCategory")
+  subExpenses   Expense[] @relation("ExpenseSubcategory")
+
+  /// Postgres treats NULL parentIds as distinct, so the API also checks duplicate top-level names.
+  @@unique([workspaceId, parentId, name])
+}
+
+model Expense {
+  id            String         @id @default(uuid()) @db.Uuid
+  workspaceId   String         @db.Uuid
+  categoryId    String?        @db.Uuid
+  subcategoryId String?        @db.Uuid
+  /// Integer minor units (cents/paise). Never store money as floats.
+  /// When the expense has items, this is the sum of their amounts.
+  amountMinor   BigInt
+  currency      String         @db.Char(3)
+  date          DateTime       @db.Date
+  /// Local time of day as HH:MM
+  time          String?        @db.VarChar(5)
+  note          String?
+  merchant      String?
+  location      String?
+  description   String?
+  tags          String[]       @default([])
+  paymentMethod PaymentMethod?
+
+  // Audit metadata
+  createdById   String         @db.Uuid
+  createdAt     DateTime       @default(now())
+  /// { type, browser, browserVersion, os, device, appVersion, userAgent }
+  createdClient Json?
+  updatedById   String?        @db.Uuid
+  updatedAt     DateTime       @updatedAt
+  updatedClient Json?
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User          @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User?         @relation("ExpenseUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  category    Category?     @relation("ExpenseCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategory Category?     @relation("ExpenseSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  items       ExpenseItem[]
+  attachments Attachment[]
+
+  @@index([workspaceId, date])
+  @@index([workspaceId, categoryId])
+  @@index([workspaceId, merchant])
+  @@index([tags], type: Gin)
+}
+
+model ExpenseItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  expenseId      String  @db.Uuid
+  position       Int
+  name           String
+  quantity       Decimal @default(1) @db.Decimal(12, 3)
+  unitPriceMinor BigInt
+  /// round(quantity * unitPriceMinor)
+  amountMinor    BigInt
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([expenseId, position])
+}
+
+/// Bills/receipts. The file lives in storage under storageKey (never the user's file name).
+model Attachment {
+  id           String   @id @default(uuid()) @db.Uuid
+  expenseId    String   @db.Uuid
+  workspaceId  String   @db.Uuid
+  uploadedById String   @db.Uuid
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String   @unique
+  createdAt    DateTime @default(now())
+
+  expense    Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  @@index([expenseId])
+}

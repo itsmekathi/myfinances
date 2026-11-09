@@ -1,0 +1,4 @@
+.env
+/src/generated/prisma
+dist/
+/storage
