@@ -101,7 +101,8 @@ Mobile (inside `apps/mobile`):
 - Default categories live in `DEFAULT_CATEGORIES` (shared) and are seeded by `workspaces/default-categories.ts`.
 
 **Attachments.**
-- `StorageService` writes files to local disk under random UUID keys, so user file names never become paths. It's meant to be swapped for S3/R2 when deploying.
+- `StorageService` stores files under random UUID keys, so user file names never become paths. `STORAGE_DRIVER` picks the driver: `local` disk (default; dev and e2e) or `s3` (Cloudflare R2 in production, configured by `S3_*` env vars). Downloads always stream through the API; buckets stay private. A record whose file is missing returns 404.
+- `test/s3-storage.e2e-spec.ts` runs the attachment endpoints against an in-process fake S3 server, so the real AWS SDK requests are exercised.
 - Uploads are multipart field `file`, limited by `ATTACHMENT_LIMITS` in shared.
 - The type is detected from the file's leading bytes (`attachments/file-type.ts`), not the client's MIME type.
 - Downloads require auth. Web fetches them as blobs; mobile uses `api.authHeaders()` for `<Image>` and `File.downloadFileAsync`.
