@@ -18,7 +18,7 @@ export const envSchema = z.object({
     ),
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
   /**
-   * How many reverse proxies in front of the API append to X-Forwarded-For.
+   * How many proxy hops sit in front of the API, counting the socket peer (3 on Render).
    * Express then takes the client IP from that many entries from the right, so
    * the rate limiter sees real clients and spoofed left-hand entries are ignored.
    * 0 (default) ignores X-Forwarded-For. Check GET /api/health/client-ip to pick it.

@@ -288,7 +288,7 @@ The API rate-limits by client IP (`req.ip`). On Render, every request passes thr
 `TRUST_PROXY_HOPS` (Render env var, default `0`) is the number of proxies that append to `X-Forwarded-For`. Express then reads the client IP that many entries from the right, and ignores anything further left, which a client could forge. To choose the value:
 
 1. Call `GET /api/health/client-ip` **directly** on the Render URL (the path the mobile app uses), e.g. `curl https://myfinances-api-0km5.onrender.com/api/health/client-ip`. Then call it **through Vercel**: `https://myfinances-gamma.vercel.app/api/health/client-ip`.
-2. Compare `forwardedFor` with your real public IP. Set `TRUST_PROXY_HOPS` to the number of entries to the **right** of your IP on the direct call (usually `1`).
+2. Compare `forwardedFor` with your real public IP. Set `TRUST_PROXY_HOPS` to the number of entries to the **right** of your IP on the direct call, **plus one** for the socket peer (`socket`). On Render this is **`3`** (measured 2026-11-14): `forwardedFor` is `<you>, <Cloudflare>, <Render LB>` and `socket` is `127.0.0.1`, a proxy inside the container.
 3. Redeploy, call the endpoint again, and check that `ip` is your real IP on direct calls.
 4. Test spoofing: `curl -H "X-Forwarded-For: 1.2.3.4" <url>` must **not** return `"ip": "1.2.3.4"`.
 
