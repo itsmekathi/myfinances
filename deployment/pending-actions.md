@@ -68,13 +68,13 @@ Fixed by replacing `deploy.yml` with `deploy-production.yml` / `deploy-staging.y
 | 12 | Staging is behind **Vercel Authentication** (302 to a Vercel login). Fine if only you test staging; otherwise turn it off for Preview. | Vercel → Settings → Deployment Protection | ☐ |
 | 11 | ~~Task 8's required status check is named `checks / checks`~~ (built into the ruleset file) | | ☑ |
 | 14 | R2: enable it, create buckets `myfinances-attachments-prod` / `-staging`, one Object Read & Write token per bucket, then set `STORAGE_DRIVER=s3` and the `S3_*` vars on both Render services (setup-guide section 10) | Cloudflare, Render | ☐ |
-| 13 | Set **`TRUST_PROXY_HOPS=3`** on both Render services (measured on staging; setup-guide 5.6), then check that `GET /api/health/client-ip` returns your IP as `ip` | Render → Environment | ☑ set on both; staging verified (real IP, forged headers ignored); production pending deploy f2db2b1 |
+| 13 | Set **`TRUST_PROXY_HOPS=3`** on both Render services (measured on staging; setup-guide 5.6), then check that `GET /api/health/client-ip` returns your IP as `ip` | Render → Environment | ☑ set on both; verified on staging and production (real IP, forged headers ignored). Through Vercel, `ip` is Vercel's egress IP (expected); Vercel sends the client in `x-vercel-forwarded-for`, but it can only be trusted with a shared secret |
 
 ## Code tasks
 
 | # | Task | Notes | Done |
 |---|---|---|---|
-| A | **Proxy fix for the rate limiter** (merged in PR #4; verified on staging) | Requests pass through Vercel and Render/Cloudflare, so the throttler currently sees proxy IPs and users share one rate-limit bucket. First inspect the real `X-Forwarded-For` chain on production, then set Express `trust proxy` (or a custom throttler tracker) so it can't be bypassed by clients sending fake headers directly to Render. | ☑ (production check pending deploy) |
+| A | **Proxy fix for the rate limiter** (merged in PR #4; verified on staging) | Requests pass through Vercel and Render/Cloudflare, so the throttler currently sees proxy IPs and users share one rate-limit bucket. First inspect the real `X-Forwarded-For` chain on production, then set Express `trust proxy` (or a custom throttler tracker) so it can't be bypassed by clients sending fake headers directly to Render. | ☑ |
 | B | **R2 storage for attachments** | Code done on `feature/r2-attachment-storage` (`STORAGE_DRIVER=s3`). Needs task 14. Until then, attachments are lost on every deploy or restart. | ☐ |
 | C | Update GitHub Actions versions | Done: checkout v7, setup-node v7, pnpm/action-setup v6, setup-buildx v4, login v4, metadata v6, build-push v7. Follow-up: pnpm/action-setup now points to its successor `pnpm/setup`. | ☑ |
 
