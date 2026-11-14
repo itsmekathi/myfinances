@@ -213,7 +213,7 @@ If the name is already taken on Vercel, the step fails; pick another name. Leave
 
 For `production`:
 - **Deployment branches:** choose **Selected branches → `main`**. A feature branch then can't deploy to production, even if the workflow is edited by mistake.
-- **Required reviewers (optional):** add yourself. Every production deploy then waits for your approval.
+- **Required reviewers:** add yourself (on `staging` too). Every deploy then waits for your approval; one approval releases both the `api` and `web` jobs.
 
 ### 5.2 Repository secrets (`Settings → Secrets and variables → Actions`)
 
@@ -225,14 +225,21 @@ Shared by both environments:
 
 GHCR needs no secret: the workflow uses the built-in `GITHUB_TOKEN` with `packages: write` permission.
 
-### 5.3 Protect `main` (recommended)
+### 5.3 Protect `main`
 
-Go to **Settings → Branches → Add rule** for `main`:
+Defined in `.github/rulesets/protect-main.json`. Import it once:
 
-- Require a pull request before merging.
-- Require status checks to pass, and select the `checks` job. It appears in the list after the first workflow run.
+1. Go to **Settings → Rules → Rulesets → New ruleset → Import a ruleset** and choose `.github/rulesets/protect-main.json`.
+2. Check that it shows:
+   - **Enforcement status:** Active
+   - **Target:** default branch (`main`)
+   - **Rules:** restrict deletions, block force pushes, require a pull request (0 approvals, since you can't approve your own PR), require status check **`checks / checks`** (GitHub Actions)
+   - **Bypass list:** empty
+3. Click **Create**.
 
-Changes then reach production only after review and green tests.
+Changes then reach `main` only through a PR whose feature-branch run passed `checks`. A direct `git push origin main` is rejected.
+
+If you ever need an emergency bypass, add **Repository admin** to the bypass list with mode **For pull requests only**. Admins can then merge a PR with failing checks, but still can't push to `main` directly.
 
 ### 5.4 Enforce branch naming
 
@@ -273,6 +280,19 @@ The `staging` environment can stay at **No restriction**: only `feature/*` branc
 
 - Public repos: unlimited free minutes.
 - Private repos: 2,000 free minutes a month. A run takes a few minutes, so that's plenty for this project.
+
+### 5.6 Rate limiting behind proxies (`TRUST_PROXY_HOPS`)
+
+The API rate-limits by client IP (`req.ip`). On Render, every request passes through proxies, and web requests also pass through Vercel's `/api` forwarding. Without configuration, every user looks like the proxy and shares one rate-limit bucket.
+
+`TRUST_PROXY_HOPS` (Render env var, default `0`) is the number of proxies that append to `X-Forwarded-For`. Express then reads the client IP that many entries from the right, and ignores anything further left, which a client could forge. To choose the value:
+
+1. Call `GET /api/health/client-ip` **directly** on the Render URL (the path the mobile app uses), e.g. `curl https://myfinances-api-0km5.onrender.com/api/health/client-ip`. Then call it **through Vercel**: `https://myfinances-gamma.vercel.app/api/health/client-ip`.
+2. Compare `forwardedFor` with your real public IP. Set `TRUST_PROXY_HOPS` to the number of entries to the **right** of your IP on the direct call, **plus one** for the socket peer (`socket`). On Render this is **`3`** (measured 2026-11-14): `forwardedFor` is `<you>, <Cloudflare>, <Render LB>` and `socket` is `127.0.0.1`, a proxy inside the container.
+3. Redeploy, call the endpoint again, and check that `ip` is your real IP on direct calls.
+4. Test spoofing: `curl -H "X-Forwarded-For: 1.2.3.4" <url>` must **not** return `"ip": "1.2.3.4"`.
+
+Web requests add one more hop (Vercel), so with the direct-call value they're tracked by Vercel's egress IP. That's still a per-region bucket rather than one global bucket, but it's coarser. Trusting one more hop to fix that would let direct callers forge their IP. Telling the two paths apart reliably needs Vercel to add a secret header, which is a possible follow-up.
 
 ---
 

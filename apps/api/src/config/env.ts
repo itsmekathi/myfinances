@@ -17,6 +17,13 @@ export const envSchema = z.object({
         .filter(Boolean),
     ),
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
+  /**
+   * How many proxy hops sit in front of the API, counting the socket peer (3 on Render).
+   * Express then takes the client IP from that many entries from the right, so
+   * the rate limiter sees real clients and spoofed left-hand entries are ignored.
+   * 0 (default) ignores X-Forwarded-For. Check GET /api/health/client-ip to pick it.
+   */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   /** Where uploaded attachments are stored (relative to the API folder). */
   STORAGE_DIR: z.string().default('storage'),
   DEFAULT_CURRENCY: z.string().length(3).toUpperCase().default('INR'),

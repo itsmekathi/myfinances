@@ -4,7 +4,7 @@ import request from 'supertest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/setup';
+import { applyTrustProxy, configureApp } from '../src/setup';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { GoogleVerifierService, type GoogleProfile } from '../src/auth/google-verifier.service';
 
@@ -53,6 +53,30 @@ describe('MyFinances API (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+  });
+
+  describe('client IP behind proxies', () => {
+    const ipOf = async (xff?: string) => {
+      const req = api().get('/api/health/client-ip');
+      if (xff) req.set('X-Forwarded-For', xff);
+      return (await req.expect(200)).body.ip as string;
+    };
+
+    afterEach(() => applyTrustProxy(app, 0));
+
+    it('ignores X-Forwarded-For by default', async () => {
+      expect(await ipOf('203.0.113.9')).not.toBe('203.0.113.9');
+    });
+
+    it('takes the client from the right with one trusted hop, ignoring forged entries', async () => {
+      applyTrustProxy(app, 1);
+      expect(await ipOf('198.51.100.1, 203.0.113.9')).toBe('203.0.113.9');
+    });
+
+    it('trusts two hops when configured', async () => {
+      applyTrustProxy(app, 2);
+      expect(await ipOf('198.51.100.1, 203.0.113.9, 192.0.2.7')).toBe('203.0.113.9');
+    });
   });
 
   describe('auth', () => {
