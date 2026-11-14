@@ -124,9 +124,36 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     });
     // The app confirms deletes with window.confirm.
     page.on('dialog', (d) => void d.accept());
+    await passVercelProtection(page);
     await use(page);
   },
 });
+
+/**
+ * Staging is behind Vercel Authentication. Trades VERCEL_AUTOMATION_BYPASS_SECRET for
+ * Vercel's bypass cookie, once per test: Vercel answers that request with a 307 that sets
+ * the cookie, and after that every request to the web origin (pages, page.request, the
+ * app's /api calls) passes. Sending the secret as a header on every request instead would
+ * turn requests that don't follow redirects (signIn) into that 307, and would hand the
+ * secret to third-party origins such as Google.
+ */
+async function passVercelProtection(page: Page): Promise<void> {
+  const secret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (!secret || !target.remote) return;
+  const res = await page.request.get(`${target.webURL}/`, {
+    headers: { 'x-vercel-protection-bypass': secret, 'x-vercel-set-bypass-cookie': 'true' },
+    maxRedirects: 0,
+  });
+  if (res.ok()) return; // not protected (e.g. production)
+  const redirected = res.status() >= 300 && res.status() < 400;
+  const cookies = await page.context().cookies(target.webURL);
+  if (!redirected || cookies.length === 0) {
+    throw new Error(
+      `Vercel bypass failed for ${target.webURL}: HTTP ${res.status()}, ${cookies.length} cookie(s). ` +
+        'Check VERCEL_AUTOMATION_BYPASS_SECRET against Vercel → Settings → Deployment Protection.',
+    );
+  }
+}
 
 /**
  * Signs the browser in without the form: logs in through the web origin's /api proxy

@@ -9,7 +9,6 @@ loadEnv({ path: resolve(__dirname, '.env'), quiet: true });
 
 const target = resolveTarget();
 const CI = Boolean(process.env.CI);
-const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
 
 const reporters: ReporterDescription[] = [
   [CI ? 'dot' : 'list'],
@@ -60,10 +59,8 @@ export default defineConfig({
         timezoneId: 'Asia/Kolkata',
         actionTimeout: 15_000,
         navigationTimeout: target.remote ? 45_000 : 15_000,
-        // Staging sits behind Vercel Authentication.
-        extraHTTPHeaders: bypass
-          ? { 'x-vercel-protection-bypass': bypass, 'x-vercel-set-bypass-cookie': 'true' }
-          : undefined,
+        // Staging sits behind Vercel Authentication: the `page` fixture fetches Vercel's
+        // bypass cookie with VERCEL_AUTOMATION_BYPASS_SECRET (src/fixtures.ts).
       },
     },
   ],

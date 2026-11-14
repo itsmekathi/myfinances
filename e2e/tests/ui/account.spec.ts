@@ -47,9 +47,19 @@ test.describe('account', () => {
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Type your email').fill(u.email);
     await dialog.getByLabel('Password').fill('wrong-password');
-    const res = await clickRateLimited(page, dialog.getByRole('button', { name: 'Delete permanently' }), isDeleteMe);
-    expect(res.status()).toBe(401);
-    await expect(dialog.getByText('Incorrect password')).toBeVisible();
+    // The app's API client treats any 401 as an expired session: it refreshes and sends the
+    // DELETE again, so one wrong password costs two of DELETE /me's 5 requests a minute, and the
+    // retry can come back 429. Judge by what the dialog finally shows; if throttled, try again.
+    const incorrect = dialog.getByText('Incorrect password');
+    const outcome = dialog.getByText(/Incorrect password|Too Many Requests/);
+    for (let attempt = 1; ; attempt++) {
+      await dialog.getByRole('button', { name: 'Delete permanently' }).click();
+      await expect(outcome).toBeVisible();
+      if ((await incorrect.isVisible()) || attempt === 3) break;
+      console.warn('[e2e] wrong-password delete was rate-limited; trying again in 61s');
+      await page.waitForTimeout(61_000);
+    }
+    await expect(incorrect).toBeVisible();
     await expect(dialog).toBeVisible(); // still open: nothing was deleted
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toHaveCount(0);
