@@ -1,0 +1,67 @@
+# Runs the Playwright suites in e2e/ and publishes their results:
+#   - a metrics table in the job summary (e2e/src/reporters/summary.ts)
+#   - inline failure annotations (Playwright's github reporter)
+#   - an artifact with the HTML report (traces, screenshots, videos), JUnit XML and metrics.json
+# Expects pnpm install and the shared package build to have run already.
+name: Playwright E2E
+description: Run the e2e/ Playwright suites against a target and publish the report.
+
+inputs:
+  target:
+    description: local | staging | production
+    required: true
+  suite:
+    description: all | api | ui
+    default: all
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Playwright version
+      id: pw
+      shell: bash
+      working-directory: e2e
+      run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Playwright browsers
+      if: inputs.suite != 'api'
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+
+    - name: Install Chromium
+      if: inputs.suite != 'api' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: pnpm --filter @myfinances/e2e exec playwright install --with-deps chromium
+
+    - name: Install Chromium system dependencies
+      if: inputs.suite != 'api' && steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: pnpm --filter @myfinances/e2e exec playwright install-deps chromium
+
+    - name: Run Playwright (${{ inputs.target }}, ${{ inputs.suite }})
+      shell: bash
+      working-directory: e2e
+      env:
+        E2E_TARGET: ${{ inputs.target }}
+        SUITE: ${{ inputs.suite }}
+      run: |
+        case "$SUITE" in
+          all) args="" ;;
+          api|ui) args="--project=$SUITE" ;;
+          *) echo "::error::suite must be all, api or ui (got '$SUITE')"; exit 1 ;;
+        esac
+        pnpm exec playwright test $args
+
+    - name: Upload Playwright report
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: playwright-${{ inputs.target }}-${{ inputs.suite }}-${{ github.run_attempt }}
+        path: |
+          e2e/playwright-report/
+          e2e/results/
+        retention-days: 14
+        if-no-files-found: ignore

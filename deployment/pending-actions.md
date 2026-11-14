@@ -19,12 +19,14 @@
 | Rate limiting | ✅ Real client IPs: `TRUST_PROXY_HOPS=3` for direct calls; `PROXY_SECRET` for web requests through Vercel |
 | Keep-awake | ✅ `keep-awake.yml` pings production `/api/health/live` every 5 minutes, 00:03–18:58 UTC |
 | Account deletion | ✅ Self-service on web (`/account`) and mobile (`account` screen) |
+| Playwright E2E | 🟡 Added: `e2e/` (`api` + `ui` suites) runs in `checks`, after every deploy (`e2e` job), and on demand (`e2e.yml`). Needs the bypass secret below for staging UI. |
 
 ## Open
 
 | # | Task | Where | Notes |
 |---|---|---|---|
 | 9 | **Mobile builds** | EAS, Google Cloud, `apps/mobile` | Set up EAS; set `EXPO_PUBLIC_API_URL` per build (staging or production API). Create an **Android** OAuth client (package `com.myfinances.app` + each signing key's SHA-1) and an **iOS** client (bundle ID `com.myfinances.app`); set `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` and add the iOS ID to `GOOGLE_CLIENT_IDS` on both Render services. Deferred. |
+| 13 | **`VERCEL_BYPASS_SECRET`** for the Playwright UI suite on staging | Vercel → Settings → Deployment Protection → Protection Bypass for Automation; GitHub → repository secret | Without it the staging `ui` suite stops at Vercel's login page. See setup-guide section 11. |
 | 12 | Staging is behind **Vercel Authentication** | Vercel → Settings → Deployment Protection | Fine while only you use staging; turn it off for Preview if others need it. |
 | — | End-to-end data check | Neon | Sign up on staging and production and confirm each user appears only in that environment's Neon branch (`staging` / `main`). |
 

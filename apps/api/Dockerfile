@@ -23,6 +23,7 @@ COPY apps/web/package.json apps/web/
 COPY apps/mobile/package.json apps/mobile/
 COPY packages/shared/package.json packages/shared/
 COPY packages/api-client/package.json packages/api-client/
+COPY e2e/package.json e2e/
 # The API's postinstall runs `prisma generate`, which needs the schema and config.
 COPY apps/api/prisma apps/api/prisma
 COPY apps/api/prisma.config.ts apps/api/
@@ -34,6 +35,9 @@ COPY apps/api apps/api
 RUN pnpm --filter "@myfinances/api..." run build
 
 ENV NODE_ENV=production
+# The commit this image was built from; /api/health/live reports it.
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
 WORKDIR /app/apps/api
 EXPOSE 3000
 

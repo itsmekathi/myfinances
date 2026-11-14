@@ -9,14 +9,15 @@ One-time setup for the free-tier hosting and the GitHub Actions deployment pipel
 
 | Event | Checks | Frontend (Vercel) | Backend (Render) | Database (Neon) |
 |---|---|---|---|---|
-| Push to `feature/<name>` | branch name, typecheck, build, e2e | **Preview** deploy, unique URL per branch | **Staging** API service | `staging` branch |
+| Push to `feature/<name>` | branch name, typecheck, build, Jest e2e, Playwright (local) | **Preview** deploy, unique URL per branch | **Staging** API service | `staging` branch |
 | Push or merge to `main` | same | **Production** deploy | **Production** API service | `main` branch |
 
-There are two workflows: `.github/workflows/deploy-staging.yml` (every branch except `main`) and `.github/workflows/deploy-production.yml` (`main`). Each runs three jobs: `checks`, then `api` and `web` in parallel:
+There are two workflows: `.github/workflows/deploy-staging.yml` (every branch except `main`) and `.github/workflows/deploy-production.yml` (`main`). Each runs four jobs: `checks`, then `api` and `web` in parallel, then `e2e`:
 
 1. **`checks`** (the reusable `.github/workflows/checks.yml`, shown as `checks / checks`)
    - Checks the branch name.
    - Runs `pnpm typecheck`, `pnpm build` and `pnpm test:e2e`.
+   - Runs the Playwright suites (`e2e/`) against the built API and web app on the runner.
    - The tests use a throwaway Postgres 16 service container.
 2. **`api`** (runs only if `checks` passed)
    - Builds a Docker image of the API, tagged with the commit SHA.
@@ -28,6 +29,9 @@ There are two workflows: `.github/workflows/deploy-staging.yml` (every branch ex
 3. **`web`** (runs alongside `api` after `checks`, so one approval releases both)
    - Points the `/api` forwarding in `vercel.json` at the matching API (staging or production).
    - Runs `vercel build` and `vercel deploy --prebuilt`, adding `--prod` in the production workflow.
+4. **`e2e`** (the reusable `.github/workflows/e2e.yml`; runs after `api` and `web` when the Render hook was called)
+   - Waits until the API's `/api/health/live` reports the commit just deployed (the image carries it as `GIT_SHA`).
+   - Runs the Playwright `api` and `ui` suites against that environment. See [section 11](#11-playwright-end-to-end-tests).
 
 On staging, a newer push to the same branch cancels the older run. Production runs queue instead, so a deploy is never cancelled halfway.
 
@@ -186,6 +190,8 @@ Copy its deploy hook separately.
 
 By default, Vercel protects preview URLs with **Vercel Authentication**: only you, logged in to Vercel, can open them. Keep it on. Previews talk to the staging API, and this keeps strangers out.
 
+The Playwright UI suite gets past it with a bypass secret: **Settings → Deployment Protection → Protection Bypass for Automation → Add secret**, then save the value as the GitHub repository secret `VERCEL_BYPASS_SECRET` (section 5.2). Without it, the staging UI suite fails at Vercel's login page; the API suite and production are unaffected.
+
 ---
 
 ## 5. GitHub repository settings
@@ -222,6 +228,7 @@ Shared by both environments:
 - `VERCEL_TOKEN`
 - `VERCEL_ORG_ID`
 - `VERCEL_PROJECT_ID`
+- `VERCEL_BYPASS_SECRET` (optional): lets the Playwright UI suite open the protected staging site (section 4.4). It's a repository secret, not an environment secret, because the `e2e` workflow has no environment (so it needs no second approval).
 
 GHCR needs no secret: the workflow uses the built-in `GITHUB_TOKEN` with `packages: write` permission.
 
@@ -419,6 +426,40 @@ Attachments uploaded before the switch were on the old disk and are gone. Openin
 
 ---
 
+## 11. Playwright end-to-end tests
+
+The `e2e/` package has two Playwright suites:
+- **`api`** calls the API directly over HTTP.
+- **`ui`** drives the web app in Chromium, through the web origin, so on Vercel it also exercises the `/api` proxy.
+
+Either suite can run against `local`, `staging` or `production`. Details are in [e2e/README.md](../e2e/README.md).
+
+**When it runs in GitHub Actions**
+
+| Trigger | Target | Where |
+|---|---|---|
+| Every push | `local`: the built API and web app on the runner, with Postgres | `checks / checks` |
+| After an approved deploy | `staging` or `production`, once the new commit is live | `e2e` job in the deploy workflows |
+| Manually: **Actions → E2E (Playwright) → Run workflow** | any target, suite `all`, `api` or `ui` | `e2e.yml` |
+
+**Where to find the results**
+- **Job summary:** pass, fail, flaky and skipped counts per suite, the failures, the slowest tests, and request latency per endpoint (p50, p95 and max, for both the API suite and the browser).
+- **Annotations:** each failure shows inline.
+- **Artifact `playwright-<target>-<suite>-<attempt>`:** the HTML report with traces, screenshots and videos of failures, plus `junit.xml` and `metrics.json`.
+
+**Test data**
+- Every run registers throwaway users named `e2e-<run>-…@example.test` and records them in a ledger. The global teardown deletes them one at a time with `DELETE /api/me` (5/min), including any that an interrupted run left behind.
+- On production, a run briefly creates real users, expenses and R2 files, then removes them.
+
+**Rate limits**
+- The API limits each IP: login and register allow 10 requests a minute each, and account deletion 5.
+- The suites run with 2 workers and wait out a `429` by honouring `Retry-After`. Expect a minute or so of waiting in each run.
+- `e2e.yml` allows only one run per target at a time.
+
+**Optional overrides** (repository variables): `E2E_STAGING_WEB_URL`, `E2E_STAGING_API_URL`, `E2E_PRODUCTION_WEB_URL` and `E2E_PRODUCTION_API_URL` replace the URLs in `e2e/src/targets.ts`.
+
+---
+
 ## Secrets checklist
 
 | Secret | Where it lives |
@@ -427,6 +468,7 @@ Attachments uploaded before the switch were on the old disk and are gone. Openin
 | `JWT_ACCESS_SECRET` (×2, different) | Render env vars |
 | Render deploy hooks (×2) | GitHub environment secrets `RENDER_DEPLOY_HOOK` |
 | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | GitHub repository secrets |
+| Vercel Protection Bypass for Automation | GitHub repository secret `VERCEL_BYPASS_SECRET` |
 | GitHub PAT `read:packages` (private image only) | Render registry credential |
 | Google client IDs | Render `GOOGLE_CLIENT_IDS`, Vercel `VITE_GOOGLE_CLIENT_ID`, mobile `.env` |
 | R2 API tokens (×2, one per bucket) | Render `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` |

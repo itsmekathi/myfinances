@@ -19,3 +19,5 @@ apps/mobile/**
 !apps/mobile/package.json
 packages/api-client/**
 !packages/api-client/package.json
+e2e/**
+!e2e/package.json

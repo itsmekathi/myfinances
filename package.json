@@ -12,7 +12,11 @@
     "dev:web": "pnpm --filter @myfinances/web dev",
     "dev:mobile": "pnpm --filter @myfinances/mobile start",
     "db:migrate": "pnpm --filter @myfinances/api db:migrate",
-    "test:e2e": "pnpm --filter @myfinances/api test:e2e"
+    "test:e2e": "pnpm --filter @myfinances/api test:e2e",
+    "pw": "pnpm --filter @myfinances/e2e pw",
+    "pw:api": "pnpm --filter @myfinances/e2e pw:api",
+    "pw:ui": "pnpm --filter @myfinances/e2e pw:ui",
+    "pw:report": "pnpm --filter @myfinances/e2e pw:report"
   },
   "devDependencies": {
     "turbo": "^2.11.10",

@@ -30,11 +30,12 @@ export class HealthController {
 
   /**
    * Liveness only: no database query. The keep-awake pinger hits this, so pings keep
-   * Render awake without also keeping the Neon database compute awake.
+   * Render awake without also keeping the Neon database compute awake. `version` is the
+   * deployed commit; post-deploy e2e runs wait for it to match before testing.
    */
   @Get('live')
   live() {
-    return { status: 'ok' };
+    return { status: 'ok', version: this.config.get('GIT_SHA', { infer: true }) };
   }
 
   /**

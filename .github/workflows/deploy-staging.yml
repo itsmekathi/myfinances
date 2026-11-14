@@ -44,6 +44,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # true once the Render deploy hook was called; gates the e2e job.
+      deployed: ${{ steps.render.outputs.deployed }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -64,9 +67,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Reported by /api/health/live; the e2e job waits for it.
+          build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Deploy to Render
+        id: render
         env:
           HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
           IMG: ${{ env.IMAGE }}:${{ github.sha }}
@@ -77,6 +83,7 @@ jobs:
           fi
           img=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$IMG")
           curl -fsS -X POST "$HOOK&imgURL=$img" > /dev/null
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
           echo "Render deploy triggered for \`$IMG\`" >> "$GITHUB_STEP_SUMMARY"
 
   web:
@@ -160,3 +167,16 @@ jobs:
             exit 1
           fi
           echo "Staging: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
+
+  # Playwright suites against the new deployment. Waits until the API serves this commit
+  # (the Render hook returns before the deploy is live). Skipped when nothing was deployed.
+  e2e:
+    name: e2e (staging)
+    needs: [api, web]
+    if: needs.api.outputs.deployed == 'true'
+    uses: ./.github/workflows/e2e.yml
+    with:
+      target: staging
+      suite: all
+      expected-sha: ${{ github.sha }}
+    secrets: inherit
