@@ -1,48 +1,58 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createReadStream, type ReadStream } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { isAbsolute, join, resolve } from 'node:path';
+import type { Readable } from 'node:stream';
 import type { Env } from '../config/env';
+import { LocalStorageDriver } from './local-storage.driver';
+import { S3StorageDriver } from './s3-storage.driver';
+import { assertStorageKey, type StorageDriver } from './storage-driver';
 
 /**
- * Stores uploaded files on local disk. Keys are random UUIDs, never user-supplied names,
- * so paths can't be manipulated. Swap this class for an S3 implementation later.
+ * Stores attachment bytes under random UUID keys, never user-supplied names, so keys
+ * can't be manipulated. STORAGE_DRIVER picks local disk (default) or an S3-compatible
+ * bucket such as Cloudflare R2.
  */
 @Injectable()
 export class StorageService implements OnModuleInit {
-  private readonly root: string;
+  readonly driver: StorageDriver;
 
   constructor(config: ConfigService<Env, true>) {
-    const dir = config.get('STORAGE_DIR', { infer: true });
-    this.root = isAbsolute(dir) ? dir : resolve(process.cwd(), dir);
+    this.driver =
+      config.get('STORAGE_DRIVER', { infer: true }) === 's3'
+        ? S3StorageDriver.create({
+            // validateEnv guarantees these are set when STORAGE_DRIVER=s3.
+            endpoint: config.get('S3_ENDPOINT', { infer: true })!,
+            region: config.get('S3_REGION', { infer: true }),
+            bucket: config.get('S3_BUCKET', { infer: true })!,
+            accessKeyId: config.get('S3_ACCESS_KEY_ID', { infer: true })!,
+            secretAccessKey: config.get('S3_SECRET_ACCESS_KEY', { infer: true })!,
+          })
+        : new LocalStorageDriver(config.get('STORAGE_DIR', { infer: true }));
   }
 
   async onModuleInit() {
-    await mkdir(this.root, { recursive: true });
+    if (this.driver instanceof LocalStorageDriver) await this.driver.init();
   }
 
-  async save(data: Buffer): Promise<string> {
+  async save(data: Buffer, contentType: string): Promise<string> {
     const key = randomUUID();
-    await writeFile(this.pathFor(key), data, { flag: 'wx' });
+    await this.driver.put(key, data, contentType);
     return key;
   }
 
-  stream(key: string): ReadStream {
-    return createReadStream(this.pathFor(key));
+  /** Opens a stored file, or returns null if it's missing (e.g. lost from an old disk). */
+  async open(key: string): Promise<Readable | null> {
+    assertStorageKey(key);
+    return this.driver.open(key);
   }
 
   async remove(key: string): Promise<void> {
-    await rm(this.pathFor(key), { force: true });
+    await this.removeMany([key]);
   }
 
   async removeMany(keys: string[]): Promise<void> {
-    await Promise.all(keys.map((k) => this.remove(k)));
-  }
-
-  private pathFor(key: string) {
-    if (!/^[0-9a-f-]{36}$/.test(key)) throw new Error('Invalid storage key');
-    return join(this.root, key);
+    if (keys.length === 0) return;
+    keys.forEach(assertStorageKey);
+    await this.driver.remove(keys);
   }
 }

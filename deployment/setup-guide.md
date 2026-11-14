@@ -38,7 +38,7 @@ On staging, a newer push to the same branch cancels the older run. Production ru
 - [x] `apps/web/vercel.json` (build settings, `/api` forwarding, SPA fallback, `"git": { "deploymentEnabled": false }`)
 - [x] `.vercel/` added to `.gitignore`
 - [x] `.github/workflows/checks.yml`, `deploy-staging.yml`, `deploy-production.yml`
-- [ ] S3/R2 storage driver for attachments (needed before attachments are used in production)
+- [x] S3/R2 storage driver for attachments (`STORAGE_DRIVER=s3`, see section 10)
 
 ---
 
@@ -349,6 +349,42 @@ Mobile gets its refresh token in the response body, so it calls Render directly.
 
 ---
 
+## 10. Attachment storage (Cloudflare R2)
+
+Render's free-tier disk is wiped on every deploy, restart and wake-up, so attachments must live in a bucket. The API's `s3` storage driver works with Cloudflare R2 (free tier: about 10 GB, no egress fees) or any S3-compatible store. Downloads still stream through the API with auth, so the buckets stay private and clients need no changes.
+
+### 10.1 Cloudflare
+
+1. Sign up or log in at https://dash.cloudflare.com, open **R2 Object Storage** and enable it. A card is required; you're only charged above the free tier.
+2. **Create bucket** twice: `myfinances-attachments-prod` and `myfinances-attachments-staging`. Location **Automatic**, storage class **Standard**. Don't enable public access or the `r2.dev` URL.
+3. **Manage R2 API Tokens → Create API token**, once per bucket:
+   - Permissions **Object Read & Write**, **Apply to specific buckets only** (that environment's bucket), TTL **Forever**.
+   - Copy the **Access Key ID** and **Secret Access Key**; the secret is shown only once.
+   - Note the S3 endpoint: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`.
+
+### 10.2 Render (each service)
+
+| Variable | `myfinances-api` | `myfinances-api-staging` |
+|---|---|---|
+| `STORAGE_DRIVER` | `s3` | `s3` |
+| `S3_ENDPOINT` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` | same |
+| `S3_REGION` | `auto` | `auto` |
+| `S3_BUCKET` | `myfinances-attachments-prod` | `myfinances-attachments-staging` |
+| `S3_ACCESS_KEY_ID` | prod token's key ID | staging token's key ID |
+| `S3_SECRET_ACCESS_KEY` | prod token's secret | staging token's secret |
+
+With `STORAGE_DRIVER=s3`, the API refuses to start if any of endpoint, bucket or keys is missing, and the Render deploy fails visibly instead of the first upload failing. Changing env vars needs a redeploy (approve a pipeline run).
+
+### 10.3 Check it
+
+1. Upload a photo to an expense.
+2. In Cloudflare, the bucket shows a new object named with a UUID.
+3. Redeploy, and check that the photo still loads.
+
+Attachments uploaded before the switch were on the old disk and are gone. Opening one returns 404 "Attachment file is missing".
+
+---
+
 ## Secrets checklist
 
 | Secret | Where it lives |
@@ -359,5 +395,6 @@ Mobile gets its refresh token in the response body, so it calls Render directly.
 | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | GitHub repository secrets |
 | GitHub PAT `read:packages` (private image only) | Render registry credential |
 | Google client IDs | Render `GOOGLE_CLIENT_IDS`, Vercel `VITE_GOOGLE_CLIENT_ID`, mobile `.env` |
+| R2 API tokens (×2, one per bucket) | Render `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` |
 
 Never commit any of these. Rotate the Vercel token and the GitHub PAT before they expire.

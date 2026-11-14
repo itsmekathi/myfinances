@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppModule } from '../src/app.module';
 import { applyTrustProxy, configureApp } from '../src/setup';
@@ -405,6 +405,15 @@ describe('MyFinances API (e2e)', () => {
 
         await api().delete(`${s.url}/${up.body.id}`).set(s.auth).expect(204);
         await api().get(`${s.url}/${up.body.id}`).set(s.auth).expect(404);
+      });
+
+      it('returns 404 when the record exists but the file is gone from disk', async () => {
+        const s = await withExpense();
+        const up = await api().post(s.url).set(s.auth).attach('file', png, { filename: 'bill.png', contentType: 'image/png' }).expect(201);
+        const att = await prisma.attachment.findUniqueOrThrow({ where: { id: up.body.id } });
+        rmSync(join(process.env.STORAGE_DIR!, att.storageKey));
+        const res = await api().get(`${s.url}/${up.body.id}`).set(s.auth).expect(404);
+        expect(res.body.message).toBe('Attachment file is missing');
       });
 
       it('rejects disallowed types (by content, not file name) and oversize files', async () => {

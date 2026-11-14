@@ -65,7 +65,7 @@ export class AttachmentsController {
       throw new BadRequestException(`An expense can have at most ${ATTACHMENT_LIMITS.maxPerExpense} attachments`);
     }
 
-    const storageKey = await this.storage.save(file.buffer);
+    const storageKey = await this.storage.save(file.buffer, mimeType);
     try {
       const created = await this.prisma.attachment.create({
         data: {
@@ -94,9 +94,12 @@ export class AttachmentsController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const att = await this.findAttachment(ws, expenseId, id);
+    const body = await this.storage.open(att.storageKey);
+    // e.g. uploaded before attachments moved off the ephemeral disk.
+    if (!body) throw new NotFoundException('Attachment file is missing');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, max-age=3600');
-    return new StreamableFile(this.storage.stream(att.storageKey), {
+    return new StreamableFile(body, {
       type: att.mimeType,
       length: att.sizeBytes,
       disposition: `inline; filename="${asciiFallback(att.fileName)}"; filename*=UTF-8''${encodeURIComponent(att.fileName)}`,
