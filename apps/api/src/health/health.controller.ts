@@ -23,6 +23,15 @@ export class HealthController {
   }
 
   /**
+   * Liveness only: no database query. The keep-awake pinger hits this, so pings keep
+   * Render awake without also keeping the Neon database compute awake.
+   */
+  @Get('live')
+  live() {
+    return { status: 'ok' };
+  }
+
+  /**
    * Shows how the proxy chain reaches the API, to pick TRUST_PROXY_HOPS: `ip` is
    * what the rate limiter uses. Only echoes the caller's own request.
    */

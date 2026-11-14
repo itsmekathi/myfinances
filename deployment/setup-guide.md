@@ -329,11 +329,15 @@ Mobile, later:
 
 Render's free services sleep after 15 minutes without traffic and take about a minute to wake up.
 
-1. Sign up at **cron-job.org** (free).
-2. Create a job:
-   - URL: `https://myfinances-api-0km5.onrender.com/api/health`
-   - Schedule: every **10 minutes**
-3. **Don't** ping staging. Letting it sleep keeps both services within Render's 750 free hours a month.
+`.github/workflows/keep-awake.yml` pings `https://myfinances-api-0km5.onrender.com/api/health/live` every 5 minutes from **00:03 to 18:58 UTC** (about 05:33 to 00:28 IST). It needs no setup: it runs from `main` once merged.
+
+- **Why not 24/7:** Render's 750 free hours a month are shared by production and staging. Running out suspends **all** free services, production included, until the next month. The window uses about 597 hours, leaving about 150 for staging. Overnight, the first visit takes about a minute.
+- **Why `/api/health/live`:** unlike `/api/health`, it doesn't query the database, so Neon's compute can still suspend when idle.
+- **Why every 5 minutes:** GitHub can delay scheduled runs, and Render sleeps after 15.
+- **To change the window:** edit the `cron` line (UTC). Keep the total under about 600 hours a month.
+- **Don't ping staging.**
+- **GitHub pauses scheduled workflows after 60 days with no repo activity.** Re-enable it under Actions → **Keep API awake**.
+- **Test it:** Actions → **Keep API awake** → **Run workflow** (`main`).
 
 ---
 
