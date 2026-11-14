@@ -298,12 +298,30 @@ Web requests add one more hop (Vercel), so with the direct-call value they're tr
 
 ## 6. Google OAuth
 
-In Google Cloud Console, go to **APIs & Services → Credentials → your Web client**:
+One Google Cloud project with one **Web** OAuth client serves local dev, staging and production.
 
-1. **Authorized JavaScript origins:** add `https://myfinances-gamma.vercel.app`.
-2. Preview URLs change per branch, and Google doesn't allow wildcard origins. So **Google sign-in only works in production**; use email/password on previews.
-   - To test Google sign-in on one particular branch, add its stable URL: `https://myfinances-git-<branch>-<your-scope>.vercel.app`.
-3. Check that the API's `GOOGLE_CLIENT_IDS` (both Render services) includes the web client ID and the mobile client IDs.
+1. **Project:** console.cloud.google.com → project picker → **New project** → `MyFinances` (no organization). Billing isn't needed.
+2. **Google Auth Platform → Get started:** app name `MyFinances`, your support email, audience **External**, contact email.
+3. **Branding:**
+   - Application home page: `https://myfinances-gamma.vercel.app`. Signed-out visitors see the public landing page (`HomePage.tsx`).
+   - Privacy policy: `https://myfinances-gamma.vercel.app/privacy` (`PrivacyPage.tsx`).
+   - Authorized domains: `myfinances-gamma.vercel.app`.
+   - **No logo:** a logo triggers Google's verification review.
+4. **Data access:** add nothing. The default `openid`, `email` and `profile` scopes are enough and need no review.
+5. **Clients → Create client → Web application** (`MyFinances Web`):
+   - Authorized JavaScript origins: `https://myfinances-gamma.vercel.app`, `https://myfinances-gamma-staging.vercel.app` and `http://localhost:5173`.
+   - No redirect URIs.
+   - Copy the client ID. The client secret isn't used.
+6. **Audience:** **Publish app** once the home page and privacy page are live. While the app is in **Testing**, only listed **Test users** can sign in.
+7. **Put the client ID in:**
+   - Vercel `VITE_GOOGLE_CLIENT_ID` (Production and Preview, not Sensitive)
+   - `GOOGLE_CLIENT_IDS` on both Render services
+   - local `apps/web/.env`, `apps/api/.env`, and `apps/mobile/.env` (`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`)
+8. **Rebuild:** run **Deploy production** (and **Deploy staging** on a `feature/*` branch) from the Actions tab. Vite bakes `VITE_*` values into the build.
+
+Mobile, later:
+- **Android client:** package `com.myfinances.app` plus each signing key's SHA-1.
+- **iOS client:** bundle ID `com.myfinances.app`. Set `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`, and add it to `GOOGLE_CLIENT_IDS`.
 
 ---
 
