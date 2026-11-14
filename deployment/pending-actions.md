@@ -59,9 +59,9 @@ Fixed by replacing `deploy.yml` with `deploy-production.yml` / `deploy-staging.y
 | 2 | `WEB_ORIGIN` = `https://myfinances-gamma.vercel.app` | Render → `myfinances-api` → Environment | ☑ (CORS verified) |
 | 3 | `STAGING_WEB_DOMAIN` = e.g. `myfinances-gamma-staging.vercel.app` (no `https://`) | GitHub → Environments → `staging` → **Variables** | ☑ (aliasing works since run 43550368878) |
 | 4 | `WEB_ORIGIN` = `https://<STAGING_WEB_DOMAIN>` | Render → `myfinances-api-staging` → Environment | ☑ (CORS verified) |
-| 5 | `VITE_GOOGLE_CLIENT_ID` was never set: the production bundle has no client ID. Create the Google project and Web client (setup-guide 6), then set it for **Production and Preview** and rebuild. | Google Cloud, Vercel | ☐ |
-| 6 | Pinger every 10 minutes on `https://myfinances-api-0km5.onrender.com/api/health` | cron-job.org | ☐ |
-| 7 | Google Web client origins (production, staging, localhost); `GOOGLE_CLIENT_IDS` on both Render services; Branding (home page, `/privacy`, authorized domains for both production and staging), then **Publish app** (setup-guide 6) | Google Cloud Console, Render | ☐ |
+| 5 | `VITE_GOOGLE_CLIENT_ID` set for Production and Preview (Web client `815704834526-gur0…`) | Google Cloud, Vercel | ☑ Google sign-in verified on production and staging |
+| 6 | Keep the production API awake: `keep-awake.yml` pings `/api/health/live` every 5 minutes, 00:03 to 18:58 UTC (setup-guide 7) | GitHub Actions (after merge) | ☐ → ☑ once its first run is green |
+| 7 | Google Web client origins (production, staging, localhost); `GOOGLE_CLIENT_IDS` on both Render services; Branding (home page, `/privacy`, authorized domains for both production and staging), then **Publish app** (setup-guide 6) | Google Cloud Console, Render | ☑ |
 | 8 | Protect `main`: import `.github/rulesets/protect-main.json` (PR required, `checks / checks` required, no force push or delete). See setup-guide 5.3. | GitHub → Settings → Rules → Rulesets → Import | ☑ active |
 | 9 | Mobile `EXPO_PUBLIC_API_URL`: staging or production URL per build | `apps/mobile` env / EAS | ☐ |
 | 10 | Manual approval for deploys: **Required reviewers** → add yourself; leave "Prevent self-review" unticked (you're the only reviewer). Do this on **both** environments. | GitHub → Settings → Environments → `production` and `staging` | ☑ (production confirmed; check staging) |

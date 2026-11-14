@@ -55,6 +55,11 @@ describe('MyFinances API (e2e)', () => {
     await app.close();
   });
 
+  it('answers the liveness check without auth or a database query', async () => {
+    const res = await api().get('/api/health/live').expect(200);
+    expect(res.body).toEqual({ status: 'ok' });
+  });
+
   describe('client IP behind proxies', () => {
     const ipOf = async (xff?: string) => {
       const req = api().get('/api/health/client-ip');
