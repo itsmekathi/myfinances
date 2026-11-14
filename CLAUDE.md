@@ -21,10 +21,17 @@ The web and mobile apps consume the shared packages from their compiled `dist/`.
 - This is enforced by a GitHub ruleset (`.github/rulesets/branch-naming.json`) and by the first step of CI.
 - `main` is protected by `.github/rulesets/protect-main.json`: changes go through a PR, and the PR needs a passing `checks / checks`. No direct pushes or force pushes.
 - `.github/workflows/deploy-production.yml` deploys `main` to production; `deploy-staging.yml` deploys `feature/*` branches to staging (Render API and Vercel). Both run the reusable `checks.yml` first. Deploy jobs use the `production`/`staging` GitHub environments, so environment protection rules (e.g. required reviewers) gate them.
-- Playwright runs in three places:
-  - inside `checks.yml` against the built apps on the runner (target `local`)
-  - after each deploy, as the `e2e` job (reusable `e2e.yml`). It first waits until `/api/health/live` reports the deployed `version` (`GIT_SHA`, a Docker build arg).
-  - manually, via **Actions → E2E (Playwright)**
+- **Deploys are path-filtered.** Both deploy workflows start with the reusable `changes.yml`. It diffs against the last *successful* run of that workflow on the branch, not the previous commit, so a failed deploy is retried on the next push. A branch's first run, or a run after a force push, has no base, so everything deploys.
+  - `api` deploys only when `.github/filters.yml`'s `api` paths change: apps/api, packages/shared and the root workspace files.
+  - `web` deploys only for the `web` paths: apps/web, packages/shared, packages/api-client and the root files.
+  - Mobile, e2e and workflow-only edits deploy nothing.
+  - Docs-only changes (`*.md`, `deployment/`, `.github/rulesets/`): `checks / checks` still runs and reports, since it's required on `main`, but skips every step after the branch-name check (the `checks.yml` input `run`).
+  - **Run workflow** with `force` deploys both regardless. Use it after a workflow-only change, or to reset staging, which every `feature/*` branch shares.
+- Playwright runs in four places:
+  - inside `checks.yml` against the built apps on the runner (target `local`), when code changed
+  - after a deploy, as the `e2e` job (reusable `e2e.yml`), only if the API or web app was actually deployed. After an API deploy it first waits until `/api/health/live` reports the deployed `version` (`GIT_SHA`, a Docker build arg). A web-only deploy passes no `expected-sha`.
+  - nightly at 02:30 UTC (08:00 IST): the full suite against production (`schedule` in `e2e.yml`). Inputs are empty on a schedule, hence the `inputs.target || 'production'` fallbacks.
+  - manually, via **Actions → E2E (Playwright)**: pick `staging`, `production` or `local`, and a suite
   `e2e.yml` has no `environment:` (so no second approval) and reads the repository secret `VERCEL_AUTOMATION_BYPASS_SECRET` for the protected staging site. The shared steps live in `.github/actions/playwright`.
 - `apps/web/vercel.json` uses `routes` (not `rewrites`). The first route sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` on every page (`continue: true`), which the Google sign-in popup needs; `vite.config.ts` sets the same header locally. The `/api` route adds `x-proxy-secret: $PROXY_SECRET` via a request-header transform, then `handle: filesystem` and the SPA fallback come after it. The deploy workflows rewrite that route's `dest` per environment. `AppThrottlerGuard` (`common/client-ip.ts`) trusts the first `X-Forwarded-For` entry only when the secret matches.
 - `.github/workflows/keep-awake.yml` pings production's `/api/health/live` (no DB query) every 5 minutes during IST waking hours. It isn't 24/7, because Render's 750 free hours a month are shared with staging, and running out suspends production.

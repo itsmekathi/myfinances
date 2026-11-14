@@ -1,9 +1,12 @@
 # Playwright end-to-end suites (e2e/): `api` (HTTP only) and `ui` (Chromium).
 #
 # - Manually: Actions → "E2E (Playwright)" → Run workflow, pick a target and a suite.
-# - After each deploy: deploy-staging.yml / deploy-production.yml call this with
-#   expected-sha, and the run first waits until the API serves that commit.
-# - The `local` target also runs on every push inside checks.yml.
+# - Nightly at 02:30 UTC (08:00 IST): the full suite against production. That is inside
+#   keep-awake.yml's window, so the API is warm. (Scheduled runs use the default branch.)
+# - After a deploy: deploy-staging.yml / deploy-production.yml call this when the API or
+#   the web app was actually deployed. After an API deploy they pass expected-sha, and the
+#   run first waits until the API serves that commit.
+# - The `local` target also runs inside checks.yml whenever code (not just docs) changed.
 #
 # Results: job summary (pass/fail/flaky per suite, slowest tests, request latency),
 # inline annotations, and the `playwright-*` artifact (HTML report with traces).
@@ -17,6 +20,8 @@
 name: E2E (Playwright)
 
 on:
+  schedule:
+    - cron: '30 2 * * *'
   workflow_dispatch:
     inputs:
       target:
@@ -46,8 +51,9 @@ on:
         required: false
 
 # One run per target at a time: runs share the target's per-IP rate limits.
+# Scheduled runs have no inputs, hence the production / all fallbacks here and below.
 concurrency:
-  group: e2e-${{ inputs.target }}
+  group: e2e-${{ inputs.target || 'production' }}
   cancel-in-progress: false
 
 permissions:
@@ -55,7 +61,7 @@ permissions:
 
 jobs:
   e2e:
-    name: e2e (${{ inputs.target }}, ${{ inputs.suite }})
+    name: e2e (${{ inputs.target || 'production' }}, ${{ inputs.suite || 'all' }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # Only used by the `local` target; idle otherwise.
@@ -73,13 +79,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
+      TARGET: ${{ inputs.target || 'production' }}
+      SUITE: ${{ inputs.suite || 'all' }}
       # local target: the API that Playwright starts uses these.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myfinances_e2e?schema=public
       JWT_ACCESS_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       E2E_EXPECTED_SHA: ${{ inputs.expected-sha }}
-      E2E_WEB_URL: ${{ inputs.target == 'staging' && vars.E2E_STAGING_WEB_URL || inputs.target == 'production' && vars.E2E_PRODUCTION_WEB_URL || '' }}
-      E2E_API_URL: ${{ inputs.target == 'staging' && vars.E2E_STAGING_API_URL || inputs.target == 'production' && vars.E2E_PRODUCTION_API_URL || '' }}
+      E2E_WEB_URL: ${{ (inputs.target || 'production') == 'staging' && vars.E2E_STAGING_WEB_URL || (inputs.target || 'production') == 'production' && vars.E2E_PRODUCTION_WEB_URL || '' }}
+      E2E_API_URL: ${{ (inputs.target || 'production') == 'staging' && vars.E2E_STAGING_API_URL || (inputs.target || 'production') == 'production' && vars.E2E_PRODUCTION_API_URL || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/setup@v3
@@ -93,11 +101,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # The suites import @myfinances/shared from dist; the local target also needs the built API and web app.
       - name: Build
-        env:
-          TARGET: ${{ inputs.target }}
         run: |
           if [ "$TARGET" = "local" ]; then pnpm build; else pnpm --filter @myfinances/shared build; fi
       - uses: ./.github/actions/playwright
         with:
-          target: ${{ inputs.target }}
-          suite: ${{ inputs.suite }}
+          target: ${{ env.TARGET }}
+          suite: ${{ env.SUITE }}
