@@ -98,7 +98,10 @@ jobs:
       - if: steps.guard.outputs.enabled == 'true'
         uses: actions/checkout@v7
       - if: steps.guard.outputs.enabled == 'true'
-        uses: pnpm/action-setup@v6
+        uses: pnpm/setup@v3
+        with:
+          # Installs pnpm only (version from package.json packageManager); install runs below.
+          install: false
       - if: steps.guard.outputs.enabled == 'true'
         uses: actions/setup-node@v7
         with:

@@ -123,8 +123,10 @@ export function PrivacyPage() {
         <Section title="Keeping and deleting your data">
           <p>
             We keep your information for as long as your account exists. Deleting an expense also deletes its attached
-            files. To delete your account and all its data, email {mail} from the email address on your account; we will
-            delete it within 30 days. Database backups may keep copies for a short additional period before they expire.
+            files. You can delete your account and all its data at any time under <strong>Account → Delete account</strong>{' '}
+            on the website or in the app; it is deleted immediately. You can also email {mail} from the email address on
+            your account, and we will delete it within 30 days. Database backups may keep copies for a short additional
+            period before they expire.
           </p>
           <p>You can also email us to ask for a copy of your data or to correct it.</p>
         </Section>

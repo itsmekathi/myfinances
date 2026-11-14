@@ -108,6 +108,13 @@ Mobile (inside `apps/mobile`):
 - The type is detected from the file's leading bytes (`attachments/file-type.ts`), not the client's MIME type.
 - Downloads require auth. Web fetches them as blobs; mobile uses `api.authHeaders()` for `<Image>` and `File.downloadFileAsync`.
 
+**Account deletion** (`DELETE /api/me`, `UsersService.deleteAccount`):
+- The user types their email to confirm. Password accounts also give their password; Google-only accounts don't need one.
+- Every workspace where the user is the only member is deleted (expenses, items, attachments, categories), then the user. Stored files are removed after the commit.
+- It returns 409 if the user shares a workspace with others. `Expense.createdBy` and `Attachment.uploadedBy` are `Restrict`, so revisit this when sharing ships.
+- The web refresh cookie is cleared. Access tokens stay valid until they expire, but every route then 404s because the user is gone.
+- UI: web `/account` (`AccountPage.tsx`), mobile `src/app/account.tsx`. The privacy policy describes this flow, so keep them in sync.
+
 **Clients.**
 - **Web:** `/` shows the public `HomePage` to signed-out visitors and the dashboard to signed-in users; `/privacy` is public. Both are the Google OAuth consent screen's home page and privacy policy links, so keep them public and the policy accurate when data handling changes. `AuthProvider` restores the session on load via `api.auth.restore()`, which de-duplicates concurrent refreshes and is StrictMode-safe. Query keys follow the pattern `['expenses' | 'expense' | 'stats' | 'categories', workspaceId, ...]`, and mutations invalidate by that prefix. The expense editor is a full page at `/expenses/new` and `/expenses/:id`.
 - **Mobile:** `Stack.Protected` guards routes based on auth status. The Google Sign-In native module is `require`d only when `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` is set, so password login still works in Expo Go. Its config plugin is only added when an iOS client ID exists, because the plugin throws without `iosUrlScheme`.

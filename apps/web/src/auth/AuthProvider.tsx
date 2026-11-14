@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { LoginInput, RegisterInput, UserDto, WorkspaceSummaryDto } from '@myfinances/shared';
+import type { DeleteAccountInput, LoginInput, RegisterInput, UserDto, WorkspaceSummaryDto } from '@myfinances/shared';
 import { api, onSessionExpired } from '../lib/api';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -13,6 +13,8 @@ interface AuthState {
   register: (input: RegisterInput) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Permanently deletes the account, then signs out. */
+  deleteAccount: (input: DeleteAccountInput) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -76,6 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     logout: async () => {
       await api.auth.logout();
+      signOutLocally();
+    },
+    deleteAccount: async (input) => {
+      await api.account.delete(input);
       signOutLocally();
     },
   };

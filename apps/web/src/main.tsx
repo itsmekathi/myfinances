@@ -14,6 +14,7 @@ import { ExpenseEditorPage } from './pages/ExpenseEditorPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { HomePage } from './pages/HomePage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { AccountPage } from './pages/AccountPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -58,6 +59,7 @@ function App() {
         <Route path="expenses/new" element={<ExpenseEditorPage />} />
         <Route path="expenses/:id" element={<ExpenseEditorPage />} />
         <Route path="categories" element={<CategoriesPage />} />
+        <Route path="account" element={<AccountPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

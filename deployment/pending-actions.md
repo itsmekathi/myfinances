@@ -60,7 +60,7 @@ Fixed by replacing `deploy.yml` with `deploy-production.yml` / `deploy-staging.y
 | 3 | `STAGING_WEB_DOMAIN` = e.g. `myfinances-gamma-staging.vercel.app` (no `https://`) | GitHub → Environments → `staging` → **Variables** | ☑ (aliasing works since run 43550368878) |
 | 4 | `WEB_ORIGIN` = `https://<STAGING_WEB_DOMAIN>` | Render → `myfinances-api-staging` → Environment | ☑ (CORS verified) |
 | 5 | `VITE_GOOGLE_CLIENT_ID` set for Production and Preview (Web client `815704834526-gur0…`) | Google Cloud, Vercel | ☑ Google sign-in verified on production and staging |
-| 6 | Keep the production API awake: `keep-awake.yml` pings `/api/health/live` every 5 minutes, 00:03 to 18:58 UTC (setup-guide 7) | GitHub Actions (after merge) | ☐ → ☑ once its first run is green |
+| 6 | Keep the production API awake: `keep-awake.yml` pings `/api/health/live` every 5 minutes, 00:03 to 18:58 UTC (setup-guide 7) | GitHub Actions | ☑ live since PR #7; first run green |
 | 7 | Google Web client origins (production, staging, localhost); `GOOGLE_CLIENT_IDS` on both Render services; Branding (home page, `/privacy`, authorized domains for both production and staging), then **Publish app** (setup-guide 6) | Google Cloud Console, Render | ☑ |
 | 8 | Protect `main`: import `.github/rulesets/protect-main.json` (PR required, `checks / checks` required, no force push or delete). See setup-guide 5.3. | GitHub → Settings → Rules → Rulesets → Import | ☑ active |
 | 9 | Mobile `EXPO_PUBLIC_API_URL`: staging or production URL per build | `apps/mobile` env / EAS | ☐ |
@@ -76,7 +76,10 @@ Fixed by replacing `deploy.yml` with `deploy-production.yml` / `deploy-staging.y
 |---|---|---|---|
 | A | **Proxy fix for the rate limiter** (merged in PR #4; verified on staging) | Requests pass through Vercel and Render/Cloudflare, so the throttler currently sees proxy IPs and users share one rate-limit bucket. First inspect the real `X-Forwarded-For` chain on production, then set Express `trust proxy` (or a custom throttler tracker) so it can't be bypassed by clients sending fake headers directly to Render. | ☑ |
 | B | **R2 storage for attachments** | Done: live on staging and production, verified that files survive a restart. | ☑ |
-| C | Update GitHub Actions versions | Done: checkout v7, setup-node v7, pnpm/action-setup v6, setup-buildx v4, login v4, metadata v6, build-push v7. Follow-up: pnpm/action-setup now points to its successor `pnpm/setup`. | ☑ |
+| C | Update GitHub Actions versions | Done: checkout v7, setup-node v7, setup-buildx v4, login v4, metadata v6, build-push v7; pnpm via `pnpm/setup@v3` (`install: false`). | ☑ |
+| D | **Self-service account deletion** | Account page on web (`/account`) and mobile (`account` screen) → `DELETE /api/me`. Deletes sole-member workspaces (expenses, attachments, categories) and stored files; 409 if a workspace is shared. | ☑ |
+| E | Deploy staging fails clearly when started on `main` (`branch-guard` job) | | ☑ |
+| F | **Exact rate limits for web users** (`feature/trusted-proxy-ip`) | Vercel adds `x-proxy-secret` to `/api` requests; the API trusts Vercel's `X-Forwarded-For` client only when it matches. Needs `PROXY_SECRET` in Vercel (Preview/Production) and on both Render services. Verify on staging before merging. | ☐ |
 
 ## Checks after the blocker is fixed
 

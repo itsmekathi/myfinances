@@ -8,6 +8,7 @@ import type {
   ExpenseDto,
   LoginInput,
   MeResponse,
+  DeleteAccountInput,
   Paginated,
   RegisterInput,
   StatsSummary,
@@ -188,6 +189,14 @@ export function createApiClient(opts: ApiClientOptions) {
     },
 
     me: () => request<MeResponse>('GET', '/me'),
+
+    account: {
+      /** Permanently deletes the account and all its data, then ends the local session. */
+      delete: async (input: DeleteAccountInput) => {
+        await request<void>('DELETE', '/me', input);
+        await clearSession();
+      },
+    },
 
     categories: {
       list: (workspaceId: string) => request<CategoryDto[]>('GET', `${ws(workspaceId)}/categories`),

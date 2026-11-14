@@ -36,6 +36,16 @@ export const refreshSchema = z.object({
 });
 export type RefreshInput = z.infer<typeof refreshSchema>;
 
+/**
+ * Permanently deletes the signed-in user's account. The account email must be typed to
+ * confirm; accounts with a password must also give it (Google-only accounts can't).
+ */
+export const deleteAccountSchema = z.object({
+  confirmEmail: z.string().trim().toLowerCase().min(1),
+  password: z.string().min(1).max(128).optional(),
+});
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;
+
 export interface UserDto {
   id: string;
   email: string;
