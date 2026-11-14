@@ -11,7 +11,7 @@
 #
 # No `environment:` here on purpose: the deploy that called it was already approved.
 # Optional configuration (Settings → Secrets and variables → Actions, repository level):
-#   secret   VERCEL_BYPASS_SECRET     Vercel "Protection Bypass for Automation" (staging web)
+#   secret   VERCEL_AUTOMATION_BYPASS_SECRET  Vercel "Protection Bypass for Automation" (staging web)
 #   variable E2E_STAGING_WEB_URL / E2E_STAGING_API_URL / E2E_PRODUCTION_WEB_URL / E2E_PRODUCTION_API_URL
 #            override the URLs built into e2e/src/targets.ts
 name: E2E (Playwright)
@@ -42,7 +42,7 @@ on:
         type: string
         default: ''
     secrets:
-      VERCEL_BYPASS_SECRET:
+      VERCEL_AUTOMATION_BYPASS_SECRET:
         required: false
 
 # One run per target at a time: runs share the target's per-IP rate limits.
@@ -76,7 +76,7 @@ jobs:
       # local target: the API that Playwright starts uses these.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myfinances_e2e?schema=public
       JWT_ACCESS_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
-      VERCEL_BYPASS_SECRET: ${{ secrets.VERCEL_BYPASS_SECRET }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       E2E_EXPECTED_SHA: ${{ inputs.expected-sha }}
       E2E_WEB_URL: ${{ inputs.target == 'staging' && vars.E2E_STAGING_WEB_URL || inputs.target == 'production' && vars.E2E_PRODUCTION_WEB_URL || '' }}
       E2E_API_URL: ${{ inputs.target == 'staging' && vars.E2E_STAGING_API_URL || inputs.target == 'production' && vars.E2E_PRODUCTION_API_URL || '' }}

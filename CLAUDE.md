@@ -25,7 +25,7 @@ The web and mobile apps consume the shared packages from their compiled `dist/`.
   - inside `checks.yml` against the built apps on the runner (target `local`)
   - after each deploy, as the `e2e` job (reusable `e2e.yml`). It first waits until `/api/health/live` reports the deployed `version` (`GIT_SHA`, a Docker build arg).
   - manually, via **Actions → E2E (Playwright)**
-  `e2e.yml` has no `environment:` (so no second approval) and reads the repository secret `VERCEL_BYPASS_SECRET` for the protected staging site. The shared steps live in `.github/actions/playwright`.
+  `e2e.yml` has no `environment:` (so no second approval) and reads the repository secret `VERCEL_AUTOMATION_BYPASS_SECRET` for the protected staging site. The shared steps live in `.github/actions/playwright`.
 - `apps/web/vercel.json` uses `routes` (not `rewrites`). The first route sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` on every page (`continue: true`), which the Google sign-in popup needs; `vite.config.ts` sets the same header locally. The `/api` route adds `x-proxy-secret: $PROXY_SECRET` via a request-header transform, then `handle: filesystem` and the SPA fallback come after it. The deploy workflows rewrite that route's `dest` per environment. `AppThrottlerGuard` (`common/client-ip.ts`) trusts the first `X-Forwarded-For` entry only when the secret matches.
 - `.github/workflows/keep-awake.yml` pings production's `/api/health/live` (no DB query) every 5 minutes during IST waking hours. It isn't 24/7, because Render's 750 free hours a month are shared with staging, and running out suspends production.
 - See `deployment/` for the hosting decisions and the setup guide.

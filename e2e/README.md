@@ -38,13 +38,13 @@ pnpm --filter @myfinances/e2e exec playwright test -g "token"
 | `production` | https://myfinances-gamma.vercel.app | https://myfinances-api-0km5.onrender.com |
 
 ```sh
-E2E_TARGET=staging VERCEL_BYPASS_SECRET=… pnpm pw
+E2E_TARGET=staging VERCEL_AUTOMATION_BYPASS_SECRET=… pnpm pw
 E2E_TARGET=production pnpm pw:api
 E2E_TARGET=staging E2E_WEB_URL=https://<some-preview>.vercel.app pnpm pw:ui
 ```
 
 - **Local:** if `pnpm dev` is running, the tests use it. Otherwise Playwright starts the built apps itself: `prisma migrate deploy`, then `node dist/main.js`, plus `vite preview`. Run `pnpm build` first in that case.
-- **Staging:** the web app sits behind Vercel Authentication, so the UI suite needs `VERCEL_BYPASS_SECRET` (Vercel → Deployment Protection → Protection Bypass for Automation).
+- **Staging:** the web app sits behind Vercel Authentication, so the UI suite needs `VERCEL_AUTOMATION_BYPASS_SECRET` (Vercel → Deployment Protection → Protection Bypass for Automation).
 - **Remote targets in general:** global setup waits up to 3 minutes for a sleeping Render or Neon instance to wake up.
 
 ## Test data and cleanup

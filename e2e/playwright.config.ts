@@ -9,7 +9,7 @@ loadEnv({ path: resolve(__dirname, '.env'), quiet: true });
 
 const target = resolveTarget();
 const CI = Boolean(process.env.CI);
-const bypass = process.env.VERCEL_BYPASS_SECRET;
+const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
 
 const reporters: ReporterDescription[] = [
   [CI ? 'dot' : 'list'],

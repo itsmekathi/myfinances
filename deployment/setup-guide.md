@@ -190,7 +190,7 @@ Copy its deploy hook separately.
 
 By default, Vercel protects preview URLs with **Vercel Authentication**: only you, logged in to Vercel, can open them. Keep it on. Previews talk to the staging API, and this keeps strangers out.
 
-The Playwright UI suite gets past it with a bypass secret: **Settings → Deployment Protection → Protection Bypass for Automation → Add secret**, then save the value as the GitHub repository secret `VERCEL_BYPASS_SECRET` (section 5.2). Without it, the staging UI suite fails at Vercel's login page; the API suite and production are unaffected.
+The Playwright UI suite gets past it with a bypass secret: **Settings → Deployment Protection → Protection Bypass for Automation → Add secret**, then save the value as the GitHub repository secret `VERCEL_AUTOMATION_BYPASS_SECRET` (section 5.2). Without it, the staging UI suite fails at Vercel's login page; the API suite and production are unaffected.
 
 ---
 
@@ -228,7 +228,7 @@ Shared by both environments:
 - `VERCEL_TOKEN`
 - `VERCEL_ORG_ID`
 - `VERCEL_PROJECT_ID`
-- `VERCEL_BYPASS_SECRET` (optional): lets the Playwright UI suite open the protected staging site (section 4.4). It's a repository secret, not an environment secret, because the `e2e` workflow has no environment (so it needs no second approval).
+- `VERCEL_AUTOMATION_BYPASS_SECRET` (optional): lets the Playwright UI suite open the protected staging site (section 4.4). It's a repository secret, not an environment secret, because the `e2e` workflow has no environment (so it needs no second approval).
 
 GHCR needs no secret: the workflow uses the built-in `GITHUB_TOKEN` with `packages: write` permission.
 
@@ -468,7 +468,7 @@ Either suite can run against `local`, `staging` or `production`. Details are in 
 | `JWT_ACCESS_SECRET` (×2, different) | Render env vars |
 | Render deploy hooks (×2) | GitHub environment secrets `RENDER_DEPLOY_HOOK` |
 | `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID` | GitHub repository secrets |
-| Vercel Protection Bypass for Automation | GitHub repository secret `VERCEL_BYPASS_SECRET` |
+| Vercel Protection Bypass for Automation | GitHub repository secret `VERCEL_AUTOMATION_BYPASS_SECRET` |
 | GitHub PAT `read:packages` (private image only) | Render registry credential |
 | Google client IDs | Render `GOOGLE_CLIENT_IDS`, Vercel `VITE_GOOGLE_CLIENT_ID`, mobile `.env` |
 | R2 API tokens (×2, one per bucket) | Render `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` |
