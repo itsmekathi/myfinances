@@ -1,0 +1,129 @@
+# main only: checks, then deploys to production
+# (Render production API, Vercel production, Neon `main` branch).
+# Deploy steps are skipped (with a warning) until their secrets are configured.
+# Feature branches use deploy-staging.yml. Setup: deployment/setup-guide.md
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Queue production runs instead of cancelling one halfway through a deploy.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/myfinances-api
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  api:
+    name: api (production)
+    # Guards a manual run on another branch from deploying it to production.
+    if: github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Deploy to Render
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          IMG: ${{ env.IMAGE }}:${{ github.sha }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK is not set for production; skipping the Render deploy."
+            exit 0
+          fi
+          img=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$IMG")
+          curl -fsS -X POST "$HOOK&imgURL=$img" > /dev/null
+          echo "Render deploy triggered for \`$IMG\`" >> "$GITHUB_STEP_SUMMARY"
+
+  web:
+    name: web (production)
+    # Runs alongside api (both after checks) so that, with required reviewers on the
+    # environment, one approval releases both jobs. The Render hook only triggers a
+    # deploy and doesn't wait for it, so ordering after api guaranteed nothing anyway.
+    if: github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      API_URL: ${{ secrets.API_URL }}
+    steps:
+      - name: Check Vercel secrets
+        id: guard
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::warning::Vercel secrets are not set; skipping the frontend deploy."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.enabled == 'true'
+        uses: actions/checkout@v5
+      - if: steps.guard.outputs.enabled == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.guard.outputs.enabled == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Point /api at the production API
+        if: steps.guard.outputs.enabled == 'true'
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "::error::API_URL is not set for production."
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            const file = "apps/web/vercel.json";
+            const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+            const api = process.env.API_URL.replace(/\/+$/, "");
+            cfg.rewrites.find((r) => r.source === "/api/:path*").destination = `${api}/api/:path*`;
+            fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
+          '
+      - name: Build and deploy to Vercel (production)
+        if: steps.guard.outputs.enabled == 'true'
+        run: |
+          npm install -g vercel@latest
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"

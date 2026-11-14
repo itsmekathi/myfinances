@@ -12,21 +12,24 @@ One-time setup for the free-tier hosting and the GitHub Actions deployment pipel
 | Push to `feature/<name>` | branch name, typecheck, build, e2e | **Preview** deploy, unique URL per branch | **Staging** API service | `staging` branch |
 | Push or merge to `main` | same | **Production** deploy | **Production** API service | `main` branch |
 
-The workflow (`.github/workflows/deploy.yml`) runs three jobs in sequence:
+There are two workflows: `.github/workflows/deploy-staging.yml` (every branch except `main`) and `.github/workflows/deploy-production.yml` (`main`). Each runs three jobs: `checks`, then `api` and `web` in parallel:
 
-1. **`checks`**
+1. **`checks`** (the reusable `.github/workflows/checks.yml`, shown as `checks / checks`)
+   - Checks the branch name.
    - Runs `pnpm typecheck`, `pnpm build` and `pnpm test:e2e`.
    - The tests use a throwaway Postgres 16 service container.
 2. **`api`** (runs only if `checks` passed)
    - Builds a Docker image of the API, tagged with the commit SHA.
    - Pushes it to GitHub Container Registry (GHCR).
-   - Calls the Render deploy hook with that image: staging for branches, production for `main`.
+   - Production also tags it `latest`.
+   - Calls the Render deploy hook for that workflow's environment with the image.
+   - If the GitHub environment has required reviewers, the job waits here for approval.
    - The container runs `prisma migrate deploy` on start.
-3. **`web`** (runs after `api`)
+3. **`web`** (runs alongside `api` after `checks`, so one approval releases both)
    - Points the `/api` forwarding in `vercel.json` at the matching API (staging or production).
-   - Runs `vercel build` and `vercel deploy --prebuilt`, adding `--prod` only on `main`.
+   - Runs `vercel build` and `vercel deploy --prebuilt`, adding `--prod` in the production workflow.
 
-A newer push to the same branch cancels the older run.
+On staging, a newer push to the same branch cancels the older run. Production runs queue instead, so a deploy is never cancelled halfway.
 
 ### Repo files the pipeline needs
 
@@ -34,7 +37,7 @@ A newer push to the same branch cancels the older run.
 - [x] `apps/api/prisma.config.ts` reads `DIRECT_DATABASE_URL` for migrations
 - [x] `apps/web/vercel.json` (build settings, `/api` forwarding, SPA fallback, `"git": { "deploymentEnabled": false }`)
 - [x] `.vercel/` added to `.gitignore`
-- [x] `.github/workflows/deploy.yml`
+- [x] `.github/workflows/checks.yml`, `deploy-staging.yml`, `deploy-production.yml`
 - [ ] S3/R2 storage driver for attachments (needed before attachments are used in production)
 
 ---
