@@ -66,15 +66,19 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test:e2e
 
-  api:
-    name: api (${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }})
+  # Production and staging are separate jobs with fixed environment names: runs on
+  # main failed with a GitHub "Internal server error" before the job was created
+  # when the environment came from an expression. Shared steps use YAML anchors.
+  api-production:
+    name: api (production)
+    if: github.ref == 'refs/heads/main'
     needs: checks
     runs-on: ubuntu-latest
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-    permissions:
+    environment: production
+    permissions: &api-permissions
       contents: read
       packages: write
-    steps:
+    steps: &api-steps
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -111,19 +115,28 @@ jobs:
           curl -fsS -X POST "$HOOK&imgURL=$img" > /dev/null
           echo "Render deploy triggered for \`$IMG\`" >> "$GITHUB_STEP_SUMMARY"
 
-  web:
-    name: web (${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }})
-    needs: api
+  api-staging:
+    name: api (staging)
+    if: github.ref != 'refs/heads/main'
+    needs: checks
     runs-on: ubuntu-latest
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-    env:
+    environment: staging
+    permissions: *api-permissions
+    steps: *api-steps
+
+  web-production:
+    name: web (production)
+    needs: api-production
+    runs-on: ubuntu-latest
+    environment: production
+    env: &web-env
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       API_URL: ${{ secrets.API_URL }}
       VERCEL_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
       PROD_FLAG: ${{ github.ref == 'refs/heads/main' && '--prod' || '' }}
-    steps:
+    steps: &web-steps
       - name: Check Vercel secrets
         id: guard
         run: |
@@ -178,3 +191,11 @@ jobs:
         run: |
           vercel alias set "$URL" "$DOMAIN" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
           echo "Staging: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
+
+  web-staging:
+    name: web (preview)
+    needs: api-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    env: *web-env
+    steps: *web-steps
