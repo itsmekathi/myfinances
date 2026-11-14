@@ -1,19 +1,18 @@
-# Checks every push, then deploys:
-#   main             -> production  (Render prod API, Vercel production)
-#   feature/<name>   -> staging     (Render staging API, Vercel preview)
-# Any other branch name fails the first step. GitHub also blocks creating such
-# branches via the "Branch naming" ruleset (.github/rulesets/branch-naming.json).
+# Every branch except main: checks, then deploys to staging
+# (Render staging API, Vercel preview, Neon `staging` branch).
+# Branch names other than feature/<name> fail the checks. GitHub also blocks
+# creating them via the "Branch naming" ruleset (.github/rulesets/branch-naming.json).
 # Deploy steps are skipped (with a warning) until their secrets are configured.
-# Setup: deployment/setup-guide.md
-name: CI / Deploy
+# Production lives in deploy-production.yml. Setup: deployment/setup-guide.md
+name: Deploy staging
 
 on:
   push:
-    branches: ['**']
+    branches-ignore: [main]
   workflow_dispatch:
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-staging-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -24,61 +23,19 @@ env:
 
 jobs:
   checks:
-    name: checks
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      # The e2e setup appends _test to the database name and creates it.
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myfinances?schema=public
-      JWT_ACCESS_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
-    steps:
-      - name: Check branch name
-        env:
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          # main, or feature/<name>: lowercase letters, digits and hyphens,
-          # e.g. feature/42, feature/add-budgets, feature/42-add-budgets
-          if [ "$BRANCH" = "main" ] || echo "$BRANCH" | grep -Eq '^feature/[a-z0-9]+(-[a-z0-9]+)*$'; then
-            echo "Branch name OK: $BRANCH"
-          else
-            echo "::error::Branch '$BRANCH' does not match feature/<name-or-issue-number> (lowercase letters, digits, hyphens). Rename it: git branch -m feature/<name>"
-            exit 1
-          fi
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: pnpm typecheck
-      - run: pnpm test:e2e
+    uses: ./.github/workflows/checks.yml
 
-  # Production and staging are separate jobs with fixed environment names: runs on
-  # main failed with a GitHub "Internal server error" before the job was created
-  # when the environment came from an expression. Shared steps use YAML anchors.
-  api-production:
-    name: api (production)
-    if: github.ref == 'refs/heads/main'
+  api:
+    name: api (staging)
+    # Guards a manual run on main from deploying main to staging.
+    if: github.ref != 'refs/heads/main'
     needs: checks
     runs-on: ubuntu-latest
-    environment: production
-    permissions: &api-permissions
+    environment: staging
+    permissions:
       contents: read
       packages: write
-    steps: &api-steps
+    steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -90,9 +47,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          tags: |
-            type=sha,format=long,prefix=
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          tags: type=sha,format=long,prefix=
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -108,35 +63,28 @@ jobs:
           IMG: ${{ env.IMAGE }}:${{ github.sha }}
         run: |
           if [ -z "$HOOK" ]; then
-            echo "::warning::RENDER_DEPLOY_HOOK is not set for this environment; skipping the Render deploy."
+            echo "::warning::RENDER_DEPLOY_HOOK is not set for staging; skipping the Render deploy."
             exit 0
           fi
           img=$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$IMG")
           curl -fsS -X POST "$HOOK&imgURL=$img" > /dev/null
           echo "Render deploy triggered for \`$IMG\`" >> "$GITHUB_STEP_SUMMARY"
 
-  api-staging:
-    name: api (staging)
+  web:
+    name: web (preview)
+    # Runs alongside api (both after checks) so that, with required reviewers on the
+    # environment, one approval releases both jobs. The Render hook only triggers a
+    # deploy and doesn't wait for it, so ordering after api guaranteed nothing anyway.
     if: github.ref != 'refs/heads/main'
     needs: checks
     runs-on: ubuntu-latest
     environment: staging
-    permissions: *api-permissions
-    steps: *api-steps
-
-  web-production:
-    name: web (production)
-    needs: api-production
-    runs-on: ubuntu-latest
-    environment: production
-    env: &web-env
+    env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       API_URL: ${{ secrets.API_URL }}
-      VERCEL_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
-      PROD_FLAG: ${{ github.ref == 'refs/heads/main' && '--prod' || '' }}
-    steps: &web-steps
+    steps:
       - name: Check Vercel secrets
         id: guard
         run: |
@@ -155,11 +103,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - name: Point /api at this environment's API
+      - name: Point /api at the staging API
         if: steps.guard.outputs.enabled == 'true'
         run: |
           if [ -z "$API_URL" ]; then
-            echo "::error::API_URL is not set for this environment."
+            echo "::error::API_URL is not set for staging."
             exit 1
           fi
           node -e '
@@ -170,32 +118,24 @@ jobs:
             cfg.rewrites.find((r) => r.source === "/api/:path*").destination = `${api}/api/:path*`;
             fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
           '
-      - name: Build and deploy to Vercel
+      - name: Build and deploy to Vercel (preview)
         id: deploy
         if: steps.guard.outputs.enabled == 'true'
         run: |
           npm install -g vercel@latest
-          vercel pull --yes --environment="$VERCEL_ENV" --token="$VERCEL_TOKEN"
-          vercel build $PROD_FLAG --token="$VERCEL_TOKEN"
-          url=$(vercel deploy --prebuilt $PROD_FLAG --token="$VERCEL_TOKEN")
+          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          vercel build --token="$VERCEL_TOKEN"
+          url=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
       # Gives staging one fixed URL (the latest feature-branch preview), so it can be
       # used as the staging WEB_ORIGIN and as a Google OAuth origin.
       # Set the STAGING_WEB_DOMAIN variable on the staging environment to enable it.
       - name: Point the staging domain at this preview
-        if: steps.guard.outputs.enabled == 'true' && github.ref != 'refs/heads/main' && vars.STAGING_WEB_DOMAIN != ''
+        if: steps.guard.outputs.enabled == 'true' && vars.STAGING_WEB_DOMAIN != ''
         env:
           DOMAIN: ${{ vars.STAGING_WEB_DOMAIN }}
           URL: ${{ steps.deploy.outputs.url }}
         run: |
           vercel alias set "$URL" "$DOMAIN" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
           echo "Staging: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
-
-  web-staging:
-    name: web (preview)
-    needs: api-staging
-    runs-on: ubuntu-latest
-    environment: staging
-    env: *web-env
-    steps: *web-steps

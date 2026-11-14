@@ -1,0 +1,53 @@
+# Reusable checks, called by deploy-staging.yml and deploy-production.yml:
+# branch name, build, typecheck and API e2e tests.
+name: Checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The e2e setup appends _test to the database name and creates it.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myfinances?schema=public
+      JWT_ACCESS_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
+    steps:
+      - name: Check branch name
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          # main, or feature/<name>: lowercase letters, digits and hyphens,
+          # e.g. feature/42, feature/add-budgets, feature/42-add-budgets
+          if [ "$BRANCH" = "main" ] || echo "$BRANCH" | grep -Eq '^feature/[a-z0-9]+(-[a-z0-9]+)*$'; then
+            echo "Branch name OK: $BRANCH"
+          else
+            echo "::error::Branch '$BRANCH' does not match feature/<name-or-issue-number> (lowercase letters, digits, hyphens). Rename it: git branch -m feature/<name>"
+            exit 1
+          fi
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test:e2e

@@ -18,7 +18,7 @@ The web and mobile apps consume the shared packages from their compiled `dist/`.
 
 - Branch names must be `main` or `feature/<name-or-issue-number>`: lowercase letters, digits and hyphens (e.g. `feature/42-add-budgets`).
 - This is enforced by a GitHub ruleset (`.github/rulesets/branch-naming.json`) and by the first step of CI.
-- `.github/workflows/deploy.yml` deploys `main` to production and `feature/*` branches to staging (Render API and Vercel).
+- `.github/workflows/deploy-production.yml` deploys `main` to production; `deploy-staging.yml` deploys `feature/*` branches to staging (Render API and Vercel). Both run the reusable `checks.yml` first. Deploy jobs use the `production`/`staging` GitHub environments, so environment protection rules (e.g. required reviewers) gate them.
 - See `deployment/` for the hosting decisions and the setup guide.
 
 ## Commands
