@@ -136,7 +136,15 @@ jobs:
         env:
           DOMAIN: ${{ vars.STAGING_WEB_DOMAIN }}
           URL: ${{ steps.deploy.outputs.url }}
+        # Calls the REST API instead of `vercel alias set`: the CLI looks up the token's
+        # user, which fails with "User not found" for a team-scoped token.
         run: |
-          # No --scope: the CLI takes the account from VERCEL_ORG_ID/VERCEL_PROJECT_ID.
-          vercel alias set "$URL" "$DOMAIN" --token="$VERCEL_TOKEN"
+          host="${URL#https://}"
+          case "$VERCEL_ORG_ID" in team_*) q="?teamId=$VERCEL_ORG_ID" ;; *) q="" ;; esac
+          body=$(node -e 'process.stdout.write(JSON.stringify({ alias: process.argv[1] }))' "$DOMAIN")
+          status=$(curl -sS -o alias.json -w '%{http_code}' -X POST             "https://api.vercel.com/v2/deployments/$host/aliases$q"             -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json"             -d "$body")
+          if [ "$status" -ge 300 ]; then
+            echo "::error::Vercel alias failed (HTTP $status): $(cat alias.json)"
+            exit 1
+          fi
           echo "Staging: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
