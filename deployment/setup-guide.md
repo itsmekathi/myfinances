@@ -305,7 +305,7 @@ One Google Cloud project with one **Web** OAuth client serves local dev, staging
 3. **Branding:**
    - Application home page: `https://myfinances-gamma.vercel.app`. Signed-out visitors see the public landing page (`HomePage.tsx`).
    - Privacy policy: `https://myfinances-gamma.vercel.app/privacy` (`PrivacyPage.tsx`).
-   - Authorized domains: `myfinances-gamma.vercel.app`.
+   - Authorized domains: `myfinances-gamma.vercel.app` **and** `myfinances-gamma-staging.vercel.app`. Every JavaScript origin's domain must be listed. Each `*.vercel.app` site is its own domain, because `vercel.app` is a public suffix and can't be added itself. `localhost` is exempt.
    - **No logo:** a logo triggers Google's verification review.
 4. **Data access:** add nothing. The default `openid`, `email` and `profile` scopes are enough and need no review.
 5. **Clients → Create client → Web application** (`MyFinances Web`):
