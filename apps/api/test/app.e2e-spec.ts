@@ -78,6 +78,34 @@ describe('MyFinances API (e2e)', () => {
       expect(await ipOf('198.51.100.1, 203.0.113.9')).toBe('203.0.113.9');
     });
 
+    describe('through the Vercel proxy (x-proxy-secret)', () => {
+      const SECRET = 'test-proxy-secret-0123456789abcdefghij';
+      const probe = (headers: Record<string, string>) =>
+        api().get('/api/health/client-ip').set(headers).expect(200).then((r) => r.body as { tracker: string; viaTrustedProxy: boolean });
+
+      it('tracks the first X-Forwarded-For entry when the secret matches', async () => {
+        const body = await probe({ 'x-proxy-secret': SECRET, 'X-Forwarded-For': '203.0.113.9, 13.235.50.233, 172.71.0.1' });
+        expect(body).toMatchObject({ tracker: '203.0.113.9', viaTrustedProxy: true });
+      });
+
+      it('ignores X-Forwarded-For without the right secret', async () => {
+        for (const headers of <Record<string, string>[]>[
+          { 'X-Forwarded-For': '203.0.113.9' },
+          { 'x-proxy-secret': 'wrong', 'X-Forwarded-For': '203.0.113.9' },
+          { 'x-proxy-secret': SECRET.slice(0, -1) + 'X', 'X-Forwarded-For': '203.0.113.9' },
+        ]) {
+          const body = await probe(headers);
+          expect(body.viaTrustedProxy).toBe(false);
+          expect(body.tracker).not.toBe('203.0.113.9');
+        }
+      });
+
+      it('falls back when the first entry is not an IP', async () => {
+        const body = await probe({ 'x-proxy-secret': SECRET, 'X-Forwarded-For': 'not-an-ip, 203.0.113.9' });
+        expect(body.viaTrustedProxy).toBe(false);
+      });
+    });
+
     it('trusts two hops when configured', async () => {
       applyTrustProxy(app, 2);
       expect(await ipOf('198.51.100.1, 203.0.113.9, 192.0.2.7')).toBe('203.0.113.9');

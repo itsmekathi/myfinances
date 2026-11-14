@@ -292,7 +292,19 @@ The API rate-limits by client IP (`req.ip`). On Render, every request passes thr
 3. Redeploy, call the endpoint again, and check that `ip` is your real IP on direct calls.
 4. Test spoofing: `curl -H "X-Forwarded-For: 1.2.3.4" <url>` must **not** return `"ip": "1.2.3.4"`.
 
-Web requests add one more hop (Vercel), so with the direct-call value they're tracked by Vercel's egress IP. That's still a per-region bucket rather than one global bucket, but it's coarser. Trusting one more hop to fix that would let direct callers forge their IP. Telling the two paths apart reliably needs Vercel to add a secret header, which is a possible follow-up.
+Web requests pass through Vercel first, so on their own they'd be tracked by Vercel's egress IP. **`PROXY_SECRET`** fixes that:
+- `apps/web/vercel.json` uses a `routes` transform to add `x-proxy-secret: $PROXY_SECRET` to every proxied `/api` request. Vercel fills in the value from its environment at request time.
+- When the header matches the API's `PROXY_SECRET`, the API tracks the first `X-Forwarded-For` entry. Vercel overwrites client-sent `X-Forwarded-For` and puts the real client first.
+- Without a match (direct callers, mobile), it falls back to `req.ip` from `TRUST_PROXY_HOPS`.
+- `GET /api/health/client-ip` shows `tracker` (what the limiter uses) and `viaTrustedProxy`.
+
+Setup:
+1. Generate two secrets locally: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
+2. Vercel → Settings → Environment Variables: `PROXY_SECRET` = the staging secret for **Preview**, and the prod secret for **Production**.
+3. Render: `PROXY_SECRET` on `myfinances-api-staging` (staging secret) and on `myfinances-api` (prod secret).
+4. Redeploy. Through the site, `/api/health/client-ip` should show `viaTrustedProxy: true` and your real IP as `tracker`.
+
+If the secrets don't match, nothing breaks: web users just fall back to the coarser Vercel-IP buckets.
 
 ---
 

@@ -119,7 +119,7 @@ jobs:
             const file = "apps/web/vercel.json";
             const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
             const api = process.env.API_URL.replace(/\/+$/, "");
-            cfg.rewrites.find((r) => r.source === "/api/:path*").destination = `${api}/api/:path*`;
+            cfg.routes.find((r) => r.src === "/api/(.*)").dest = `${api}/api/$1`;
             fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
           '
       - name: Build and deploy to Vercel (production)

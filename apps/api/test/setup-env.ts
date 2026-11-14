@@ -13,6 +13,7 @@ export function loadTestEnv() {
   process.env.NODE_ENV = 'test';
   process.env.GOOGLE_CLIENT_IDS = 'test-google-client-id';
   process.env.STORAGE_DIR = join(tmpdir(), 'myfinances-test-storage');
+  process.env.PROXY_SECRET = 'test-proxy-secret-0123456789abcdefghij';
 }
 
 loadTestEnv();

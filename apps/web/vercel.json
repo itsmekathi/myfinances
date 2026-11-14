@@ -4,12 +4,33 @@
   "installCommand": "cd ../.. && pnpm install --frozen-lockfile --filter \"@myfinances/web...\"",
   "buildCommand": "cd ../.. && pnpm turbo run build --filter=@myfinances/web...",
   "outputDirectory": "dist",
-  "git": { "deploymentEnabled": false },
-  "rewrites": [
+  "git": {
+    "deploymentEnabled": false
+  },
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "https://myfinances-api-0km5.onrender.com/api/:path*"
+      "src": "/api/(.*)",
+      "dest": "https://myfinances-api-0km5.onrender.com/api/$1",
+      "transforms": [
+        {
+          "type": "request.headers",
+          "op": "set",
+          "target": {
+            "key": "x-proxy-secret"
+          },
+          "args": "$PROXY_SECRET",
+          "env": [
+            "PROXY_SECRET"
+          ]
+        }
+      ]
     },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }
