@@ -3,6 +3,9 @@ import type { Request } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../common/public.decorator';
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '../config/env';
+import { resolveClientIp } from '../common/client-ip';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('health')
@@ -10,7 +13,10 @@ import { PrismaService } from '../prisma/prisma.service';
 @SkipThrottle()
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<Env, true>,
+  ) {}
 
   @Get()
   async check() {
@@ -38,8 +44,12 @@ export class HealthController {
   @Get('client-ip')
   clientIp(@Req() req: Request) {
     const header = (name: string) => req.get(name) ?? null;
+    const client = resolveClientIp(req, this.config.get('PROXY_SECRET', { infer: true }));
     return {
       ip: req.ip,
+      /** The IP the rate limiter tracks. */
+      tracker: client.ip,
+      viaTrustedProxy: client.viaTrustedProxy,
       socket: req.socket.remoteAddress ?? null,
       forwardedFor: header('x-forwarded-for'),
       cfConnectingIp: header('cf-connecting-ip'),

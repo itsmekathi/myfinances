@@ -24,6 +24,12 @@ export const envSchema = z.object({
    * 0 (default) ignores X-Forwarded-For. Check GET /api/health/client-ip to pick it.
    */
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  /**
+   * Shared secret Vercel adds as `x-proxy-secret` to proxied /api requests. When it
+   * matches, the client IP Vercel put first in X-Forwarded-For is trusted for rate
+   * limiting; otherwise req.ip (TRUST_PROXY_HOPS) is used. Unset = never trusted.
+   */
+  PROXY_SECRET: z.string().min(32).optional(),
   /** Where attachments live: `local` disk (dev, tests) or an `s3`-compatible bucket (R2 in production). */
   STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
   /** Local driver: where uploaded attachments are stored (relative to the API folder). */
