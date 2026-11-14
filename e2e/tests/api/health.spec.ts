@@ -1,5 +1,5 @@
 import { expectJson } from '../../src/api-client';
-import { expect, test } from '../../src/fixtures';
+import { expect, test, target } from '../../src/fixtures';
 
 test.describe('health', () => {
   test('reports the database as up', async ({ api }) => {
@@ -12,10 +12,16 @@ test.describe('health', () => {
     expect(body.version).toBeTruthy();
   });
 
-  test('serves the Swagger docs', async ({ api }) => {
+  // main.ts only mounts Swagger when NODE_ENV isn't production; Render runs staging and
+  // production with NODE_ENV=production, so there the docs must not be exposed.
+  test('serves the Swagger docs locally and hides them on deployments', async ({ api }) => {
     const res = await api.get('/api/docs');
-    expect(res.status()).toBe(200);
-    expect(await res.text()).toContain('swagger');
+    if (target.remote) {
+      expect(res.status()).toBe(404);
+    } else {
+      expect(res.status()).toBe(200);
+      expect(await res.text()).toContain('swagger');
+    }
   });
 
   test('requires a token for protected routes', async ({ api }) => {

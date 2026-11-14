@@ -20,6 +20,37 @@ async function poll<T>(what: string, timeoutMs: number, intervalMs: number, chec
   }
 }
 
+/**
+ * Checks that the web origin isn't behind Vercel Authentication, or that the bypass secret
+ * gets past it. Only reports (in CI as an error annotation): the API suite doesn't need it.
+ */
+async function checkVercelProtection(webURL: string): Promise<void> {
+  const secret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  const ctx = await request.newContext({
+    extraHTTPHeaders: secret ? { 'x-vercel-protection-bypass': secret } : {},
+  });
+  try {
+    // Through the web origin's /api proxy, like the UI suite's sign-in. When locked, Vercel
+    // answers 401 "Protected deployment" here (pages get a 302 to its sign-in instead).
+    const res = await ctx.get(`${webURL}/api/health/live`, { maxRedirects: 0, timeout: 60_000 });
+    const location = res.headers()['location'] ?? '';
+    const protectedByVercel =
+      (res.status() === 401 && (await res.text()).includes('Protected deployment')) ||
+      (res.status() >= 300 && res.status() < 400 && location.includes('vercel.com/sso'));
+    if (!protectedByVercel) {
+      console.log(`[e2e] web origin's /api proxy answers HTTP ${res.status()}${secret ? ' (with the bypass secret)' : ''}`);
+      return;
+    }
+    const problem = secret
+      ? `${webURL} rejected VERCEL_AUTOMATION_BYPASS_SECRET (${secret.length} characters). Copy the current value from Vercel → Settings → Deployment Protection → Protection Bypass for Automation.`
+      : `${webURL} is behind Vercel Authentication and VERCEL_AUTOMATION_BYPASS_SECRET is not set. In GitHub it must be a repository secret (Settings → Secrets and variables → Actions → Repository secrets), not an environment secret.`;
+    console.error(`[e2e] ${problem} The UI suite will fail.`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=Vercel Authentication blocks the UI suite::${problem}`);
+  } finally {
+    await ctx.dispose();
+  }
+}
+
 async function liveVersion(ctx: APIRequestContext): Promise<string> {
   const res = await ctx.get('/api/health/live', { timeout: 60_000 });
   if (!res.ok()) return `HTTP ${res.status()}`;
@@ -51,6 +82,7 @@ export default async function globalSetup() {
       return res.ok() ? true : `HTTP ${res.status()}`;
     });
     process.env.E2E_API_VERSION = await liveVersion(ctx);
+    if (target.remote) await checkVercelProtection(target.webURL);
     console.log(`[e2e] API is up (version ${process.env.E2E_API_VERSION})`);
   } finally {
     await ctx.dispose();
