@@ -59,15 +59,15 @@ Fixed by replacing `deploy.yml` with `deploy-production.yml` / `deploy-staging.y
 | 2 | `WEB_ORIGIN` = `https://myfinances-gamma.vercel.app` | Render → `myfinances-api` → Environment | ☑ (CORS verified) |
 | 3 | `STAGING_WEB_DOMAIN` = e.g. `myfinances-gamma-staging.vercel.app` (no `https://`) | GitHub → Environments → `staging` → **Variables** | ☑ (aliasing works since run 43550368878) |
 | 4 | `WEB_ORIGIN` = `https://<STAGING_WEB_DOMAIN>` | Render → `myfinances-api-staging` → Environment | ☑ (CORS verified) |
-| 5 | Tick **Preview** on `VITE_GOOGLE_CLIENT_ID` | Vercel → Settings → Environment Variables | ☐ |
+| 5 | `VITE_GOOGLE_CLIENT_ID` was never set: the production bundle has no client ID. Create the Google project and Web client (setup-guide 6), then set it for **Production and Preview** and rebuild. | Google Cloud, Vercel | ☐ |
 | 6 | Pinger every 10 minutes on `https://myfinances-api-0km5.onrender.com/api/health` | cron-job.org | ☐ |
-| 7 | Google origins: production URL and staging domain. Set `GOOGLE_CLIENT_IDS` on both Render services. | Google Cloud Console, Render | ☐ |
+| 7 | Google Web client origins (production, staging, localhost); `GOOGLE_CLIENT_IDS` on both Render services; Branding (home page, `/privacy`, authorized domains for both production and staging), then **Publish app** (setup-guide 6) | Google Cloud Console, Render | ☐ |
 | 8 | Protect `main`: import `.github/rulesets/protect-main.json` (PR required, `checks / checks` required, no force push or delete). See setup-guide 5.3. | GitHub → Settings → Rules → Rulesets → Import | ☑ active |
 | 9 | Mobile `EXPO_PUBLIC_API_URL`: staging or production URL per build | `apps/mobile` env / EAS | ☐ |
 | 10 | Manual approval for deploys: **Required reviewers** → add yourself; leave "Prevent self-review" unticked (you're the only reviewer). Do this on **both** environments. | GitHub → Settings → Environments → `production` and `staging` | ☑ (production confirmed; check staging) |
 | 12 | Staging is behind **Vercel Authentication** (302 to a Vercel login). Fine if only you test staging; otherwise turn it off for Preview. | Vercel → Settings → Deployment Protection | ☐ |
 | 11 | ~~Task 8's required status check is named `checks / checks`~~ (built into the ruleset file) | | ☑ |
-| 14 | R2: enable it, create buckets `myfinances-attachments-prod` / `-staging`, one Object Read & Write token per bucket, then set `STORAGE_DRIVER=s3` and the `S3_*` vars on both Render services (setup-guide section 10) | Cloudflare, Render | ☐ |
+| 14 | R2: enable it, create buckets `myfinances-attachments-prod` / `-staging`, one Object Read & Write token per bucket, then set `STORAGE_DRIVER=s3` and the `S3_*` vars on both Render services (setup-guide section 10) | Cloudflare, Render | ☑ |
 | 13 | Set **`TRUST_PROXY_HOPS=3`** on both Render services (measured on staging; setup-guide 5.6), then check that `GET /api/health/client-ip` returns your IP as `ip` | Render → Environment | ☑ set on both; verified on staging and production (real IP, forged headers ignored). Through Vercel, `ip` is Vercel's egress IP (expected); Vercel sends the client in `x-vercel-forwarded-for`, but it can only be trusted with a shared secret |
 
 ## Code tasks
@@ -75,7 +75,7 @@ Fixed by replacing `deploy.yml` with `deploy-production.yml` / `deploy-staging.y
 | # | Task | Notes | Done |
 |---|---|---|---|
 | A | **Proxy fix for the rate limiter** (merged in PR #4; verified on staging) | Requests pass through Vercel and Render/Cloudflare, so the throttler currently sees proxy IPs and users share one rate-limit bucket. First inspect the real `X-Forwarded-For` chain on production, then set Express `trust proxy` (or a custom throttler tracker) so it can't be bypassed by clients sending fake headers directly to Render. | ☑ |
-| B | **R2 storage for attachments** | Code done on `feature/r2-attachment-storage` (`STORAGE_DRIVER=s3`). Needs task 14. Until then, attachments are lost on every deploy or restart. | ☐ |
+| B | **R2 storage for attachments** | Done: live on staging and production, verified that files survive a restart. | ☑ |
 | C | Update GitHub Actions versions | Done: checkout v7, setup-node v7, pnpm/action-setup v6, setup-buildx v4, login v4, metadata v6, build-push v7. Follow-up: pnpm/action-setup now points to its successor `pnpm/setup`. | ☑ |
 
 ## Checks after the blocker is fixed

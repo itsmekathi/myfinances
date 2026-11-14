@@ -1,6 +1,6 @@
 import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ApiError } from '@myfinances/api-client';
@@ -12,6 +12,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { ExpenseEditorPage } from './pages/ExpenseEditorPage';
 import { CategoriesPage } from './pages/CategoriesPage';
+import { HomePage } from './pages/HomePage';
+import { PrivacyPage } from './pages/PrivacyPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -26,6 +28,7 @@ const queryClient = new QueryClient({
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth();
+  const { pathname } = useLocation();
   if (status === 'loading') {
     return (
       <div className="flex min-h-dvh items-center justify-center">
@@ -33,7 +36,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (status === 'signedOut') return <Navigate to="/login" replace />;
+  // Signed-out visitors get the public landing page at "/" (it's also the Google OAuth homepage).
+  if (status === 'signedOut') return pathname === '/' ? <HomePage /> : <Navigate to="/login" replace />;
   return children;
 }
 
@@ -41,6 +45,7 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route
         element={
           <RequireAuth>

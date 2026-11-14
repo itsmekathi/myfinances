@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router';
+import { Link, Navigate } from 'react-router';
 import { GoogleLogin } from '@react-oauth/google';
 import clsx from 'clsx';
 import { BarChart3, ShieldCheck, Users } from 'lucide-react';
@@ -146,6 +146,14 @@ export function LoginPage() {
             >
               {mode === 'login' ? 'Sign up' : 'Sign in'}
             </button>
+          </p>
+
+          <p className="text-center text-xs text-slate-400">
+            By continuing you agree to how we handle your data in our{' '}
+            <Link to="/privacy" className="hover:underline">
+              privacy policy
+            </Link>
+            .
           </p>
         </div>
       </div>
