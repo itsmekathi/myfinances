@@ -137,5 +137,6 @@ jobs:
           DOMAIN: ${{ vars.STAGING_WEB_DOMAIN }}
           URL: ${{ steps.deploy.outputs.url }}
         run: |
-          vercel alias set "$URL" "$DOMAIN" --token="$VERCEL_TOKEN" --scope="$VERCEL_ORG_ID"
+          # No --scope: the CLI takes the account from VERCEL_ORG_ID/VERCEL_PROJECT_ID.
+          vercel alias set "$URL" "$DOMAIN" --token="$VERCEL_TOKEN"
           echo "Staging: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
