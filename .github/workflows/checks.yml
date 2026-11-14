@@ -42,7 +42,10 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/setup@v3
+        with:
+          # Installs pnpm only (version from package.json packageManager); install runs below.
+          install: false
       - uses: actions/setup-node@v7
         with:
           node-version: 24

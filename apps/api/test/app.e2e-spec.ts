@@ -140,6 +140,85 @@ describe('MyFinances API (e2e)', () => {
     });
   });
 
+  describe('account deletion', () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, 3)]);
+
+    /** Registers a user with one expense and one attachment. */
+    async function userWithData(name: string) {
+      const u = await register(name);
+      const auth = { Authorization: `Bearer ${u.token}` };
+      const base = `/api/workspaces/${u.workspaceId}`;
+      const exp = await api().post(`${base}/expenses`).set(auth).send({ amountMinor: 500, date: '2026-11-14' }).expect(201);
+      const up = await api()
+        .post(`${base}/expenses/${exp.body.id}/attachments`)
+        .set(auth)
+        .attach('file', png, { filename: 'r.png', contentType: 'image/png' })
+        .expect(201);
+      const att = await prisma.attachment.findUniqueOrThrow({ where: { id: up.body.id } });
+      return { ...u, auth, email: `${name}@example.com`, storageKey: att.storageKey };
+    }
+    const userExists = async (email: string) => (await prisma.user.count({ where: { email } })) > 0;
+    const del = (auth: Record<string, string>, body: object) => api().delete('/api/me').set(auth).send(body);
+
+    it('deletes the account, its workspace, expenses and files after checking email and password', async () => {
+      const u = await userWithData('olga');
+      const filePath = join(process.env.STORAGE_DIR!, u.storageKey);
+      expect(existsSync(filePath)).toBe(true);
+
+      await del(u.auth, { confirmEmail: u.email, password: 'wrong-password' }).expect(401);
+      await del(u.auth, { confirmEmail: 'someone@example.com', password: 'correct-horse-1' }).expect(400);
+      await del(u.auth, { confirmEmail: u.email }).expect(401);
+      expect(await userExists(u.email)).toBe(true);
+      expect(existsSync(filePath)).toBe(true);
+
+      await del(u.auth, { confirmEmail: 'OLGA@example.com ', password: 'correct-horse-1' }).expect(204);
+      expect(await userExists(u.email)).toBe(false);
+      expect(await prisma.workspace.count({ where: { id: u.workspaceId } })).toBe(0);
+      expect(await prisma.expense.count({ where: { workspaceId: u.workspaceId } })).toBe(0);
+      expect(await prisma.attachment.count({ where: { storageKey: u.storageKey } })).toBe(0);
+      expect(existsSync(filePath)).toBe(false);
+
+      // The access token is still signed, but the account is gone.
+      await api().get('/api/me').set(u.auth).expect(404);
+      await mobile(api().post('/api/auth/refresh')).send({ refreshToken: u.refreshToken }).expect(401);
+    });
+
+    it('clears the web refresh cookie', async () => {
+      const reg = await api()
+        .post('/api/auth/register')
+        .send({ email: 'wendy@example.com', username: 'wendy', password: 'correct-horse-1' })
+        .expect(201);
+      const res = await del({ Authorization: `Bearer ${reg.body.accessToken}` }, {
+        confirmEmail: 'wendy@example.com',
+        password: 'correct-horse-1',
+      }).expect(204);
+      const cookie = ([] as string[]).concat(res.headers['set-cookie'] ?? []).join(';');
+      expect(cookie).toMatch(/mf_rt=;/);
+      expect(cookie).toMatch(/Path=\/api\/auth/);
+    });
+
+    it('lets a Google-only account delete itself with just the email', async () => {
+      const g = await mobile(api().post('/api/auth/google'))
+        .send({ idToken: JSON.stringify({ sub: 'g-del', email: 'gus@example.com', emailVerified: true, name: 'Gus' }) })
+        .expect(200);
+      await del({ Authorization: `Bearer ${g.body.accessToken}` }, { confirmEmail: 'gus@example.com' }).expect(204);
+      expect(await userExists('gus@example.com')).toBe(false);
+      expect(await prisma.authIdentity.count({ where: { providerUserId: 'g-del' } })).toBe(0);
+    });
+
+    it('refuses while the user shares a workspace with someone else', async () => {
+      const owner = await userWithData('pam');
+      const other = await register('quinn');
+      const otherUser = await prisma.user.findUniqueOrThrow({ where: { email: 'quinn@example.com' } });
+      await prisma.workspaceMember.create({ data: { workspaceId: owner.workspaceId, userId: otherUser.id, role: 'editor' } });
+
+      await del(owner.auth, { confirmEmail: owner.email, password: 'correct-horse-1' }).expect(409);
+      expect(await userExists(owner.email)).toBe(true);
+      expect(await prisma.workspace.count({ where: { id: owner.workspaceId } })).toBe(1);
+      expect(other.workspaceId).toBeTruthy();
+    });
+  });
+
   describe('google sign-in', () => {
     const googleToken = (p: Partial<GoogleProfile> = {}) =>
       JSON.stringify({ sub: 'g-123', email: 'gina@example.com', emailVerified: true, name: 'Gina', ...p });

@@ -1,6 +1,6 @@
-import { NavLink, Outlet } from 'react-router';
+import { Link, NavLink, Outlet } from 'react-router';
 import clsx from 'clsx';
-import { LayoutDashboard, LogOut, ReceiptText, Tags, Wallet } from 'lucide-react';
+import { CircleUserRound, LayoutDashboard, LogOut, ReceiptText, Tags, Wallet } from 'lucide-react';
 import { useAuth } from '../auth/AuthProvider';
 
 const nav = [
@@ -39,11 +39,17 @@ export function AppLayout() {
           ))}
         </nav>
         <div className="flex items-center gap-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-          <Avatar url={user?.avatarUrl} initials={initials} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{user?.displayName}</p>
-            <p className="truncate text-xs text-slate-500">{user?.email}</p>
-          </div>
+          <Link
+            to="/account"
+            className="-m-1 flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 hover:bg-slate-100 dark:hover:bg-slate-800"
+            title="Account"
+          >
+            <Avatar url={user?.avatarUrl} initials={initials} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{user?.displayName}</p>
+              <p className="truncate text-xs text-slate-500">{user?.email}</p>
+            </div>
+          </Link>
           <button
             onClick={() => void logout()}
             className="rounded-md p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -58,9 +64,14 @@ export function AppLayout() {
       {/* Top bar (mobile) */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur md:hidden dark:border-slate-800 dark:bg-slate-900/80">
         <Brand />
-        <button onClick={() => void logout()} className="rounded-md p-2 text-slate-500" aria-label="Sign out">
-          <LogOut className="size-5" />
-        </button>
+        <div className="flex items-center">
+          <Link to="/account" className="rounded-md p-2 text-slate-500" aria-label="Account">
+            <CircleUserRound className="size-5" />
+          </Link>
+          <button onClick={() => void logout()} className="rounded-md p-2 text-slate-500" aria-label="Sign out">
+            <LogOut className="size-5" />
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 px-4 pt-6 pb-24 md:px-10 md:py-10">

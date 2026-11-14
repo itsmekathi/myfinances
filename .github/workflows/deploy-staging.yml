@@ -22,6 +22,15 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/myfinances-api
 
 jobs:
+  # "Run workflow" on main would otherwise go green while every deploy job is skipped.
+  branch-guard:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error::Deploy staging only deploys feature/* branches. Pick one under \"Use workflow from\"."
+          exit 1
+
   checks:
     uses: ./.github/workflows/checks.yml
 
@@ -97,7 +106,10 @@ jobs:
       - if: steps.guard.outputs.enabled == 'true'
         uses: actions/checkout@v7
       - if: steps.guard.outputs.enabled == 'true'
-        uses: pnpm/action-setup@v6
+        uses: pnpm/setup@v3
+        with:
+          # Installs pnpm only (version from package.json packageManager); install runs below.
+          install: false
       - if: steps.guard.outputs.enabled == 'true'
         uses: actions/setup-node@v7
         with:

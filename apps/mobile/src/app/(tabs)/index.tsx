@@ -42,9 +42,14 @@ export default function DashboardScreen() {
             <Text style={{ color: c.muted, fontSize: 13 }}>Hello,</Text>
             <Text style={{ color: c.text, fontSize: 22, fontWeight: '700' }}>{user?.displayName ?? 'there'}</Text>
           </View>
-          <Pressable onPress={() => void logout()} hitSlop={12} accessibilityLabel="Sign out">
-            <Ionicons name="log-out-outline" size={24} color={c.muted} />
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 16 }}>
+            <Pressable onPress={() => router.push('/account')} hitSlop={12} accessibilityLabel="Account">
+              <Ionicons name="person-circle-outline" size={24} color={c.muted} />
+            </Pressable>
+            <Pressable onPress={() => void logout()} hitSlop={12} accessibilityLabel="Sign out">
+              <Ionicons name="log-out-outline" size={24} color={c.muted} />
+            </Pressable>
+          </View>
         </View>
 
         <MonthPicker value={month} onChange={setMonth} />
