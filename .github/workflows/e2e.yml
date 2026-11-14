@@ -1,0 +1,103 @@
+# Playwright end-to-end suites (e2e/): `api` (HTTP only) and `ui` (Chromium).
+#
+# - Manually: Actions → "E2E (Playwright)" → Run workflow, pick a target and a suite.
+# - After each deploy: deploy-staging.yml / deploy-production.yml call this with
+#   expected-sha, and the run first waits until the API serves that commit.
+# - The `local` target also runs on every push inside checks.yml.
+#
+# Results: job summary (pass/fail/flaky per suite, slowest tests, request latency),
+# inline annotations, and the `playwright-*` artifact (HTML report with traces).
+# Each run registers throwaway users (e2e-<run>-…@example.test) and deletes them at the end.
+#
+# No `environment:` here on purpose: the deploy that called it was already approved.
+# Optional configuration (Settings → Secrets and variables → Actions, repository level):
+#   secret   VERCEL_AUTOMATION_BYPASS_SECRET  Vercel "Protection Bypass for Automation" (staging web)
+#   variable E2E_STAGING_WEB_URL / E2E_STAGING_API_URL / E2E_PRODUCTION_WEB_URL / E2E_PRODUCTION_API_URL
+#            override the URLs built into e2e/src/targets.ts
+name: E2E (Playwright)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to run
+        type: choice
+        options: [staging, production, local]
+        default: staging
+      suite:
+        description: Which suite
+        type: choice
+        options: [all, api, ui]
+        default: all
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+      suite:
+        type: string
+        default: all
+      expected-sha:
+        description: Wait until the API's /api/health/live reports this commit before testing.
+        type: string
+        default: ''
+    secrets:
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+
+# One run per target at a time: runs share the target's per-IP rate limits.
+concurrency:
+  group: e2e-${{ inputs.target }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (${{ inputs.target }}, ${{ inputs.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Only used by the `local` target; idle otherwise.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: myfinances_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # local target: the API that Playwright starts uses these.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/myfinances_e2e?schema=public
+      JWT_ACCESS_SECRET: ci-only-secret-not-used-anywhere-else-0123456789
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      E2E_EXPECTED_SHA: ${{ inputs.expected-sha }}
+      E2E_WEB_URL: ${{ inputs.target == 'staging' && vars.E2E_STAGING_WEB_URL || inputs.target == 'production' && vars.E2E_PRODUCTION_WEB_URL || '' }}
+      E2E_API_URL: ${{ inputs.target == 'staging' && vars.E2E_STAGING_API_URL || inputs.target == 'production' && vars.E2E_PRODUCTION_API_URL || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v3
+        with:
+          # Installs pnpm only (version from package.json packageManager); install runs below.
+          install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The suites import @myfinances/shared from dist; the local target also needs the built API and web app.
+      - name: Build
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [ "$TARGET" = "local" ]; then pnpm build; else pnpm --filter @myfinances/shared build; fi
+      - uses: ./.github/actions/playwright
+        with:
+          target: ${{ inputs.target }}
+          suite: ${{ inputs.suite }}

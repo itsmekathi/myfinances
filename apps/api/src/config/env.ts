@@ -42,6 +42,8 @@ export const envSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   DEFAULT_CURRENCY: z.string().length(3).toUpperCase().default('INR'),
+  /** The deployed commit, baked into the image (Dockerfile ARG). /api/health/live reports it. */
+  GIT_SHA: z.string().default('dev'),
 });
 
 export type Env = z.infer<typeof envSchema>;
