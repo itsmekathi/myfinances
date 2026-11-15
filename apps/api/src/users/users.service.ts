@@ -23,6 +23,7 @@ export function toUserDto(user: User & { identities?: Pick<AuthIdentity, 'provid
     avatarUrl: user.avatarUrl,
     hasPassword: Boolean(user.passwordHash),
     providers,
+    siteRole: user.role,
   };
 }
 
@@ -46,8 +47,9 @@ export class UsersService {
 
   /**
    * Permanently deletes the user and every workspace they are the only member of
-   * (expenses, items, attachments and categories cascade), then their stored files.
-   * Refuses if they share a workspace with others: their expenses there would be orphaned.
+   * (expenses, items, attachments, income/investment entries and categories cascade), then their stored files.
+   * In shared workspaces the user just leaves; what they added stays, with the author shown as deleted.
+   * Refuses if they own a shared workspace: ownership must be transferred first.
    */
   async deleteAccount(userId: string, input: DeleteAccountInput): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -63,12 +65,18 @@ export class UsersService {
 
     const memberships = await this.prisma.workspaceMember.findMany({
       where: { userId },
-      select: { workspaceId: true, workspace: { select: { _count: { select: { members: true } } } } },
+      select: {
+        workspaceId: true,
+        role: true,
+        workspace: { select: { name: true, _count: { select: { members: true } } } },
+      },
     });
-    if (memberships.some((m) => m.workspace._count.members > 1)) {
-      throw new ConflictException('Leave or transfer your shared workspaces before deleting your account');
+    const ownedShared = memberships.filter((m) => m.role === 'owner' && m.workspace._count.members > 1);
+    if (ownedShared.length) {
+      const names = ownedShared.map((m) => m.workspace.name).join(', ');
+      throw new ConflictException(`Transfer ownership of ${names} to another member before deleting your account`);
     }
-    const workspaceIds = memberships.map((m) => m.workspaceId);
+    const workspaceIds = memberships.filter((m) => m.workspace._count.members === 1).map((m) => m.workspaceId);
 
     const files = await this.prisma.attachment.findMany({
       where: { workspaceId: { in: workspaceIds } },
@@ -77,7 +85,7 @@ export class UsersService {
 
     await this.prisma.$transaction([
       this.prisma.workspace.deleteMany({ where: { id: { in: workspaceIds } } }),
-      // Identities, refresh tokens and memberships cascade.
+      // Identities, refresh tokens, memberships and join requests cascade; authorship elsewhere is set to null.
       this.prisma.user.delete({ where: { id: userId } }),
     ]);
 

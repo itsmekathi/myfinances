@@ -101,8 +101,8 @@ describe('attachments on S3-compatible storage (e2e)', () => {
       .send({ email: 'sam@example.com', username: 'sam', password: 'correct-horse-1' })
       .expect(201);
     const auth = { Authorization: `Bearer ${reg.body.accessToken}` };
-    const me = await api().get('/api/me').set(auth).expect(200);
-    const base = `/api/workspaces/${me.body.workspaces[0].id}`;
+    const ws = await api().post('/api/workspaces').set(auth).send({ name: 'Sam home' }).expect(201);
+    const base = `/api/workspaces/${ws.body.id}`;
     const exp = await api().post(`${base}/expenses`).set(auth).send({ amountMinor: 100, date: '2026-11-14' }).expect(201);
     return { auth, base, expenseId: exp.body.id as string, url: `${base}/expenses/${exp.body.id}/attachments` };
   }
@@ -136,7 +136,7 @@ describe('attachments on S3-compatible storage (e2e)', () => {
     s3.objects.clear();
     s3.requests.length = 0;
     await prisma.$executeRawUnsafe(
-      'TRUNCATE "Attachment", "ExpenseItem", "Expense", "Category", "WorkspaceMember", "Workspace", "RefreshToken", "AuthIdentity", "User" CASCADE',
+      'TRUNCATE "JoinRequest", "Attachment", "ExpenseItem", "Expense", "Entry", "Category", "WorkspaceMember", "Workspace", "RefreshToken", "AuthIdentity", "User" CASCADE',
     );
   });
 

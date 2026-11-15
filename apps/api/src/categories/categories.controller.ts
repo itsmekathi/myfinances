@@ -11,14 +11,18 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   createCategorySchema,
+  listCategoriesQuerySchema,
   updateCategorySchema,
   type CategoryDto,
+  type CategoryKind,
   type CreateCategoryInput,
+  type ListCategoriesQuery,
   type UpdateCategoryInput,
 } from '@myfinances/shared';
 import { PrismaService } from '../prisma/prisma.service';
@@ -32,11 +36,13 @@ const toDto = (c: Category): CategoryDto => ({
   icon: c.icon,
   color: c.color,
   parentId: c.parentId,
+  kind: c.kind,
 });
 
 /**
  * Categories are two levels deep: top-level categories and their subcategories.
  * The list endpoint returns a flat list; clients nest it with buildCategoryTree().
+ * Each category has a kind (expense, income or investment); a subcategory always shares its parent's.
  */
 @ApiTags('categories')
 @ApiBearerAuth()
@@ -46,9 +52,12 @@ export class CategoriesController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
-  async list(@CurrentWorkspace() ws: WorkspaceContext): Promise<CategoryDto[]> {
+  async list(
+    @CurrentWorkspace() ws: WorkspaceContext,
+    @Query({ schema: listCategoriesQuerySchema }) q: ListCategoriesQuery,
+  ): Promise<CategoryDto[]> {
     const rows = await this.prisma.category.findMany({
-      where: { workspaceId: ws.workspaceId },
+      where: { workspaceId: ws.workspaceId, ...(q.kind ? { kind: q.kind } : {}) },
       orderBy: { name: 'asc' },
     });
     return rows.map(toDto);
@@ -61,13 +70,18 @@ export class CategoriesController {
   ): Promise<CategoryDto> {
     const parent = body.parentId ? await this.findOrThrow(ws.workspaceId, body.parentId) : null;
     if (parent?.parentId) throw new BadRequestException('Subcategories cannot have their own subcategories');
-    await this.assertNameFree(ws.workspaceId, body.parentId ?? null, body.name);
+    if (parent && body.kind && body.kind !== parent.kind) {
+      throw new BadRequestException('A subcategory must have the same kind as its parent');
+    }
+    const kind: CategoryKind = parent?.kind ?? body.kind ?? 'expense';
+    await this.assertNameFree(ws.workspaceId, kind, body.parentId ?? null, body.name);
 
     return this.handleUnique(async () =>
       toDto(
         await this.prisma.category.create({
           data: {
             workspaceId: ws.workspaceId,
+            kind,
             name: body.name,
             icon: body.icon,
             // Subcategories inherit the parent's colour unless one is given.
@@ -90,7 +104,7 @@ export class CategoriesController {
       throw new BadRequestException('Moving a category to another parent is not supported');
     }
     if (body.name && body.name !== existing.name) {
-      await this.assertNameFree(ws.workspaceId, existing.parentId, body.name, id);
+      await this.assertNameFree(ws.workspaceId, existing.kind, existing.parentId, body.name, id);
     }
     return this.handleUnique(async () =>
       toDto(
@@ -110,7 +124,7 @@ export class CategoriesController {
   ): Promise<void> {
     await this.findOrThrow(ws.workspaceId, id);
     // Deleting a category also deletes its subcategories.
-    // Affected expenses keep their amounts but lose the category (onDelete: SetNull).
+    // Affected expenses and entries keep their amounts but lose the category (onDelete: SetNull).
     await this.prisma.$transaction([
       this.prisma.category.deleteMany({ where: { parentId: id, workspaceId: ws.workspaceId } }),
       this.prisma.category.delete({ where: { id } }),
@@ -124,10 +138,17 @@ export class CategoriesController {
   }
 
   /** The DB unique index can't catch duplicate top-level names (NULL parentIds are distinct). */
-  private async assertNameFree(workspaceId: string, parentId: string | null, name: string, exceptId?: string) {
+  private async assertNameFree(
+    workspaceId: string,
+    kind: CategoryKind,
+    parentId: string | null,
+    name: string,
+    exceptId?: string,
+  ) {
     const clash = await this.prisma.category.findFirst({
       where: {
         workspaceId,
+        kind,
         parentId,
         name: { equals: name, mode: 'insensitive' },
         ...(exceptId ? { id: { not: exceptId } } : {}),

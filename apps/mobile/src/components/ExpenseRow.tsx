@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { formatMoney, type CategoryDto, type ExpenseDto } from '@myfinances/shared';
-import { useColors } from '../lib/theme';
+import { KIND_SIGN, useColors } from '../lib/theme';
 import { formatDay } from '../lib/dates';
 
 export function ExpenseRow({
@@ -50,7 +50,8 @@ export function ExpenseRow({
           {e.attachmentCount > 0 && <Ionicons name="attach" size={13} color={c.muted} />}
         </View>
       </View>
-      <Text style={{ color: c.text, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
+      <Text style={{ color: c.expense, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
+        {KIND_SIGN.expense}
         {formatMoney(e.amountMinor, e.currency)}
       </Text>
     </Pressable>

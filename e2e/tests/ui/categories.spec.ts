@@ -33,6 +33,33 @@ test.describe('categories', () => {
     await expect(page.getByText(sub)).toHaveCount(0);
   });
 
+  test('manages income categories on their own tab and offers them only for income', async ({ loggedInPage: page }) => {
+    const name = uniqueTag('inc');
+
+    await page.goto('/categories');
+    await page.getByRole('tab', { name: 'Income' }).click();
+    await expect(page.getByRole('tab', { name: 'Income' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: 'Delete Salary', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete Food & Dining', exact: true })).toHaveCount(0);
+
+    await page.getByPlaceholder('New category name').fill(name);
+    await page.getByRole('button', { name: 'Add category' }).click();
+    await expect(page.getByRole('button', { name: `Delete ${name}`, exact: true })).toBeVisible();
+
+    // It's offered for income, but not for expenses or investments.
+    await page.goto('/income/new');
+    await expect(page.getByLabel(/^Category/).locator('option', { hasText: name })).toHaveCount(1);
+    await page.goto('/expenses/new');
+    await expect(page.getByLabel(/^Category/).locator('option', { hasText: name })).toHaveCount(0);
+    await page.goto('/investments/new');
+    await expect(page.getByLabel(/^Category/).locator('option', { hasText: name })).toHaveCount(0);
+
+    await page.goto('/categories');
+    await page.getByRole('tab', { name: 'Income' }).click();
+    await page.getByRole('button', { name: `Delete ${name}`, exact: true }).click(); // confirm() is auto-accepted
+    await expect(page.getByRole('button', { name: `Delete ${name}`, exact: true })).toHaveCount(0);
+  });
+
   test('shows an error for a duplicate top-level name', async ({ loggedInPage: page }) => {
     await page.goto('/categories');
     await page.getByPlaceholder('New category name').fill('Groceries');

@@ -19,7 +19,15 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="expenses"
-        options={{ title: 'Expenses', tabBarIcon: ({ color, size }) => <Ionicons name="receipt" color={color as string} size={size} /> }}
+        options={{ title: 'Expenses', tabBarActiveTintColor: c.expense, tabBarIcon: ({ color, size }) => <Ionicons name="receipt" color={color as string} size={size} /> }}
+      />
+      <Tabs.Screen
+        name="income"
+        options={{ title: 'Income', tabBarActiveTintColor: c.income, tabBarIcon: ({ color, size }) => <Ionicons name="cash" color={color as string} size={size} /> }}
+      />
+      <Tabs.Screen
+        name="investments"
+        options={{ title: 'Invest', tabBarActiveTintColor: c.investment, tabBarIcon: ({ color, size }) => <Ionicons name="trending-up" color={color as string} size={size} /> }}
       />
     </Tabs>
   );

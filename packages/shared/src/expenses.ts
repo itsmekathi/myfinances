@@ -128,7 +128,8 @@ export interface ExpenseDto {
   paymentMethod: PaymentMethod | null;
   itemCount: number;
   attachmentCount: number;
-  createdBy: UserRefDto;
+  /** Null once the author has deleted their account. */
+  createdBy: UserRefDto | null;
   createdAt: string;
   createdClient: ClientInfoDto | null;
   updatedBy: UserRefDto | null;
@@ -150,7 +151,8 @@ export interface AttachmentDto {
   mimeType: string;
   sizeBytes: number;
   createdAt: string;
-  uploadedBy: UserRefDto;
+  /** Null once the uploader has deleted their account. */
+  uploadedBy: UserRefDto | null;
 }
 
 export interface ExpenseDetailDto extends ExpenseDto {

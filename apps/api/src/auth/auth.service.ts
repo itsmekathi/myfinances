@@ -1,12 +1,13 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, UnauthorizedException, type OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
 import type { LoginInput, RegisterInput, UserDto } from '@myfinances/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../generated/prisma/client';
-import { WorkspacesService } from '../workspaces/workspaces.service';
 import { toUserDto } from '../users/users.service';
 import { GoogleVerifierService } from './google-verifier.service';
 import { TokenService, type IssuedTokens } from './token.service';
+import type { Env } from '../config/env';
 
 export interface SessionResult {
   user: UserDto;
@@ -16,16 +17,38 @@ export interface SessionResult {
 const withIdentities = { identities: { select: { provider: true } } } as const;
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
+
   /** Used so that "unknown user" and "wrong password" take the same time. */
   private dummyHash?: Promise<string>;
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly workspaces: WorkspacesService,
     private readonly tokens: TokenService,
     private readonly google: GoogleVerifierService,
+    private readonly config: ConfigService<Env, true>,
   ) {}
+
+  /** Promotes verified accounts listed in SITE_ADMIN_EMAILS (new sign-ins are promoted as they arrive). */
+  async onModuleInit() {
+    const emails = this.adminEmails();
+    if (!emails.length) return;
+    const { count } = await this.prisma.user.updateMany({
+      where: { email: { in: emails }, emailVerified: true, role: 'user' },
+      data: { role: 'admin' },
+    });
+    if (count) this.logger.log(`Promoted ${count} site admin(s) from SITE_ADMIN_EMAILS`);
+  }
+
+  private adminEmails(): string[] {
+    return this.config.get('SITE_ADMIN_EMAILS', { infer: true });
+  }
+
+  /** Role for an account whose email Google just verified. */
+  private verifiedRole(email: string): { role: 'admin' } | object {
+    return this.adminEmails().includes(email.toLowerCase()) ? { role: 'admin' } : {};
+  }
 
   async register(input: RegisterInput, userAgent?: string): Promise<SessionResult> {
     const clash = await this.prisma.user.findFirst({
@@ -40,18 +63,15 @@ export class AuthService {
 
     const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
     try {
-      const user = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.user.create({
-          data: {
-            email: input.email,
-            username: input.username,
-            displayName: input.displayName ?? input.username,
-            passwordHash,
-          },
-          include: withIdentities,
-        });
-        await this.workspaces.createPersonal(tx, created.id, created.displayName ?? created.username!);
-        return created;
+      // No workspace yet: the user creates a household or asks to join one after signing up.
+      const user = await this.prisma.user.create({
+        data: {
+          email: input.email,
+          username: input.username,
+          displayName: input.displayName ?? input.username,
+          passwordHash,
+        },
+        include: withIdentities,
       });
       return { user: toUserDto(user), tokens: await this.tokens.issue(user.id, userAgent) };
     } catch (e) {
@@ -104,6 +124,7 @@ export class AuthService {
           where: { id: existing.id },
           data: {
             emailVerified: true,
+            ...this.verifiedRole(existing.email),
             avatarUrl: existing.avatarUrl ?? profile.picture,
             // We never verified this email ourselves, so whoever set the password may not own it.
             // Google just proved ownership: drop the unverified password to block account pre-hijacking.
@@ -119,19 +140,16 @@ export class AuthService {
     }
 
     // 3. Brand new user
-    const user = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          email: profile.email,
-          emailVerified: true,
-          displayName: profile.name ?? profile.email.split('@')[0],
-          avatarUrl: profile.picture,
-          identities: { create: { provider: 'google', providerUserId: profile.sub } },
-        },
-        include: withIdentities,
-      });
-      await this.workspaces.createPersonal(tx, created.id, created.displayName!);
-      return created;
+    const user = await this.prisma.user.create({
+      data: {
+        email: profile.email,
+        emailVerified: true,
+        ...this.verifiedRole(profile.email),
+        displayName: profile.name ?? profile.email.split('@')[0],
+        avatarUrl: profile.picture,
+        identities: { create: { provider: 'google', providerUserId: profile.sub } },
+      },
+      include: withIdentities,
     });
     return { user: toUserDto(user), tokens: await this.tokens.issue(user.id, userAgent) };
   }

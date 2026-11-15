@@ -4,8 +4,8 @@ This package has two suites that run against a real API and web app:
 
 | Suite | What it does | Folder |
 |---|---|---|
-| `api` | Calls the API over HTTP: auth and token rotation, workspace isolation, categories, expenses and items, attachments, stats, account deletion. No browser. | `tests/api` |
-| `ui` | Drives the web app in Chromium: public pages, sign-up and sign-in, the expense editor, item breakdowns, receipts, categories, account deletion. | `tests/ui` |
+| `api` | Calls the API over HTTP: auth and token rotation, workspace isolation, categories, expenses and items, income and investments, attachments, stats, account deletion. No browser. | `tests/api` |
+| `ui` | Drives the web app in Chromium: public pages, sign-up and sign-in, the expense editor, item breakdowns, receipts, income and investments, categories, account deletion. | `tests/ui` |
 
 ## Running
 
@@ -50,7 +50,9 @@ E2E_TARGET=staging E2E_WEB_URL=https://<some-preview>.vercel.app pnpm pw:ui
 ## Test data and cleanup
 
 - Each worker registers its own user (`e2e-<run>-w<n>-…@example.test`). Tests share that workspace, so they use unique names and tags, and filter by them.
-- Tests that need an isolated account call the `newAccount()` fixture. These are stats totals, workspace isolation and account deletion.
+- Sign-up creates no workspace, so `registerAccount` also creates a household with a unique name (every household is searchable, and production runs the suite). `newAccount(label, { workspace: false })` skips it, for users who will join someone else's household.
+- Tests that need an isolated account call the `newAccount()` fixture. These are stats totals, workspace isolation, account deletion, households and role permissions.
+- Tests that add members to a household remove them again in a `finally`. Teardown deletes accounts one at a time, and an owner can't delete their account while others are members.
 - Every account goes into `e2e/.accounts/<target>/` (gitignored), with its latest tokens. Global teardown deletes them all with `DELETE /api/me`, one at a time. That includes accounts an interrupted earlier run left behind; anything that still fails is retried by the next run.
 - Accounts that a test already deleted are only checked (`GET /api/me` returns 404), so they don't use up a delete.
 - Rate limits are per IP: login and register allow 10 requests a minute each, and `DELETE /api/me` allows 5. That's why the workers don't delete their own accounts: two workers doing so at once ran into 429s.
@@ -77,3 +79,9 @@ In GitHub Actions, the summary is appended to `$GITHUB_STEP_SUMMARY`, failures a
 - Use `expectJson(res, status)` and `expectStatus(res, status)` from `src/api-client.ts`. On a mismatch they include the response body in the failure.
 - Prefer role and label locators, which is how the app is labelled. `window.confirm` dialogs are accepted automatically.
 - Clean up what you create, using `try/finally` or `afterEach`. Production runs the same tests.
+
+### Roles
+
+- `tests/api/roles.spec.ts` checks every endpoint as owner, admin, editor, viewer, outsider and removed member, expecting 2xx, 403 or 404 for each. When you add an endpoint under `workspaces/:id`, add it there.
+- `tests/ui/roles.spec.ts` checks that viewers see no add, edit or delete controls, and that editors can write but not manage members.
+- **Site admins are not covered here.** The role can only be granted through a verified Google sign-in (`SITE_ADMIN_EMAILS`) or the database, so the suites can't create one on staging or production. The site admin flow (seeing every pending request, approving for any household) is tested by the Jest suite in `apps/api/test/app.e2e-spec.ts`. Playwright only checks that `/api/admin/*` returns 404 for everyone else.

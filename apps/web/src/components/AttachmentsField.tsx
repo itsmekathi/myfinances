@@ -36,6 +36,7 @@ export function AttachmentsField({
   onRemovePending,
   onRemoveSaved,
   busy,
+  readOnly = false,
 }: {
   expenseId?: string;
   saved: AttachmentDto[];
@@ -44,6 +45,8 @@ export function AttachmentsField({
   onRemovePending: (file: File) => void;
   onRemoveSaved: (att: AttachmentDto) => void;
   busy?: boolean;
+  /** Viewers: show and open attachments, but no upload or remove. */
+  readOnly?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -60,7 +63,7 @@ export function AttachmentsField({
       {(saved.length > 0 || pending.length > 0) && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {saved.map((a) => (
-            <SavedTile key={a.id} expenseId={expenseId!} att={a} onRemove={() => onRemoveSaved(a)} />
+            <SavedTile key={a.id} expenseId={expenseId!} att={a} onRemove={readOnly ? undefined : () => onRemoveSaved(a)} />
           ))}
           {pending.map((f, i) => (
             <PendingTile key={`${f.name}-${i}`} file={f} onRemove={() => onRemovePending(f)} />
@@ -68,37 +71,40 @@ export function AttachmentsField({
         </div>
       )}
 
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        onClick={() => !full && inputRef.current?.click()}
-        className={clsx(
-          'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center text-sm transition',
-          dragging
-            ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10'
-            : 'border-slate-200 hover:border-brand-500 dark:border-slate-700',
-          full && 'pointer-events-none opacity-50',
-        )}
-      >
-        {busy ? <Loader2 className="size-5 animate-spin text-brand-600" /> : <Paperclip className="size-5 text-slate-400" />}
-        <span className="font-medium">Drop bills or receipts here, or click to browse</span>
-        <span className="text-xs text-slate-500">Images or PDF · up to 10 MB each · max {ATTACHMENT_LIMITS.maxPerExpense}</span>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ACCEPT}
-          multiple
-          hidden
-          onChange={(e) => {
-            onAddFiles(Array.from(e.target.files ?? []));
-            e.target.value = '';
+      {readOnly && !saved.length && <p className="text-sm text-slate-500">No attachments.</p>}
+      {!readOnly && (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
           }}
-        />
-      </div>
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          onClick={() => !full && inputRef.current?.click()}
+          className={clsx(
+            'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center text-sm transition',
+            dragging
+              ? 'border-brand-500 bg-brand-50 dark:bg-brand-500/10'
+              : 'border-slate-200 hover:border-brand-500 dark:border-slate-700',
+            full && 'pointer-events-none opacity-50',
+          )}
+        >
+          {busy ? <Loader2 className="size-5 animate-spin text-brand-600" /> : <Paperclip className="size-5 text-slate-400" />}
+          <span className="font-medium">Drop bills or receipts here, or click to browse</span>
+          <span className="text-xs text-slate-500">Images or PDF · up to 10 MB each · max {ATTACHMENT_LIMITS.maxPerExpense}</span>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={ACCEPT}
+            multiple
+            hidden
+            onChange={(e) => {
+              onAddFiles(Array.from(e.target.files ?? []));
+              e.target.value = '';
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -117,7 +123,7 @@ function Tile({
   previewUrl?: string;
   isPdf: boolean;
   onOpen?: () => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   dimmed?: boolean;
 }) {
   return (
@@ -135,19 +141,21 @@ function Tile({
           <p className="text-[11px] text-slate-500">{meta}</p>
         </div>
       </button>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="absolute top-1.5 right-1.5 rounded-full bg-slate-900/60 p-1 text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100"
-        aria-label={`Remove ${name}`}
-      >
-        <X className="size-3.5" />
-      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="absolute top-1.5 right-1.5 rounded-full bg-slate-900/60 p-1 text-white opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+          aria-label={`Remove ${name}`}
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
     </div>
   );
 }
 
-function SavedTile({ expenseId, att, onRemove }: { expenseId: string; att: AttachmentDto; onRemove: () => void }) {
+function SavedTile({ expenseId, att, onRemove }: { expenseId: string; att: AttachmentDto; onRemove?: () => void }) {
   const ws = useWorkspace();
   const [url, setUrl] = useState<string>();
   const isPdf = att.mimeType === 'application/pdf';

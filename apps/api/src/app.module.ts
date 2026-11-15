@@ -12,6 +12,7 @@ import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { EntriesModule } from './entries/entries.module';
 import { StatsModule } from './stats/stats.module';
 import { HealthController } from './health/health.controller';
 import { StorageModule } from './storage/storage.module';
@@ -39,6 +40,7 @@ import { AttachmentsModule } from './attachments/attachments.module';
     WorkspacesModule,
     CategoriesModule,
     ExpensesModule,
+    EntriesModule,
     StatsModule,
     AttachmentsModule,
   ],

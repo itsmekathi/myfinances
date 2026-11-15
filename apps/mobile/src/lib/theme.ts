@@ -10,6 +10,10 @@ const light = {
   brandSoft: '#EEF2FF',
   danger: '#E11D48',
   dangerSoft: '#FFF1F2',
+  /** One colour per kind: expenses rose (−), income emerald (+), investments amber (no sign). */
+  expense: '#E11D48',
+  income: '#059669',
+  investment: '#D97706',
 };
 
 const dark: typeof light = {
@@ -22,6 +26,9 @@ const dark: typeof light = {
   brandSoft: '#1E1B4B',
   danger: '#FB7185',
   dangerSoft: '#4C0519',
+  expense: '#FB7185',
+  income: '#34D399',
+  investment: '#FBBF24',
 };
 
 export type Colors = typeof light;
@@ -29,3 +36,8 @@ export type Colors = typeof light;
 export function useColors(): Colors {
   return useColorScheme() === 'dark' ? dark : light;
 }
+
+export type MoneyKind = 'expense' | 'income' | 'investment';
+
+/** Sign shown before list amounts: money spent, received, or moved into an investment. */
+export const KIND_SIGN: Record<MoneyKind, string> = { expense: '−', income: '+', investment: '' };

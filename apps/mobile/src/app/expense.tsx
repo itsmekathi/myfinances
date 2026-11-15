@@ -60,7 +60,7 @@ function ExpenseForm({ expense }: { expense?: ExpenseDetailDto }) {
   const c = useColors();
   const ws = useWorkspace();
   const currency = expense?.currency ?? ws.baseCurrency;
-  const { tree } = useCategoryLookup();
+  const { tree } = useCategoryLookup('expense');
   const save = useSaveExpense();
   const remove = useDeleteExpense();
   const upload = useUploadAttachment();
@@ -178,7 +178,7 @@ function ExpenseForm({ expense }: { expense?: ExpenseDetailDto }) {
             onChangeText={setAmount}
             placeholder="0.00"
             autoFocus={!expense}
-            style={{ fontSize: 24, fontWeight: '700', height: 60 }}
+            style={{ fontSize: 24, fontWeight: '700', height: 60, color: c.expense }}
           />
         )}
 
@@ -265,7 +265,7 @@ function ExpenseForm({ expense }: { expense?: ExpenseDetailDto }) {
         {expense && (
           <View style={{ gap: 4 }}>
             <Text style={{ color: c.muted, fontSize: 12 }}>
-              Added by {expense.createdBy.displayName ?? 'someone'} · {describeClient(expense.createdClient)} ·{' '}
+              Added by {expense.createdBy ? (expense.createdBy.displayName ?? 'someone') : 'a deleted user'} · {describeClient(expense.createdClient)} ·{' '}
               {new Date(expense.createdAt).toLocaleString()}
             </Text>
             {expense.updatedBy && (

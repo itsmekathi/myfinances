@@ -54,7 +54,11 @@ export interface UserDto {
   avatarUrl: string | null;
   hasPassword: boolean;
   providers: string[];
+  /** Site-wide role. Site admins can approve join requests for any workspace. */
+  siteRole: SiteRole;
 }
+
+export type SiteRole = "user" | "admin";
 
 export interface WorkspaceSummaryDto {
   id: string;
@@ -63,7 +67,8 @@ export interface WorkspaceSummaryDto {
   role: WorkspaceRole;
 }
 
-export type WorkspaceRole = "owner" | "editor" | "viewer";
+export const WORKSPACE_ROLES = ["owner", "admin", "editor", "viewer"] as const;
+export type WorkspaceRole = (typeof WORKSPACE_ROLES)[number];
 
 export interface AuthResponse {
   accessToken: string;

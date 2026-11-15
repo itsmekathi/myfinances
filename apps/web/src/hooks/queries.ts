@@ -2,12 +2,16 @@ import { useMemo } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   buildCategoryTree,
+  type CategoryKind,
   type CreateCategoryInput,
+  type CreateEntryInput,
   type CreateExpenseInput,
+  type EntryKind,
   type UpdateCategoryInput,
+  type UpdateEntryInput,
   type UpdateExpenseInput,
 } from '@myfinances/shared';
-import type { ExpenseListParams } from '@myfinances/api-client';
+import type { EntryListParams, ExpenseListParams } from '@myfinances/api-client';
 import { api } from '../lib/api';
 import { useWorkspace } from '../auth/AuthProvider';
 
@@ -20,17 +24,21 @@ export function useCategories() {
   });
 }
 
-/** Categories plus quick lookups: tree of top-level categories and a map by id. */
-export function useCategoryLookup() {
-  const { data: categories = [], ...rest } = useCategories();
-  const value = useMemo(
-    () => ({
+/**
+ * Categories of one kind plus quick lookups: tree of top-level categories and a map by id.
+ * All kinds share one cached query; the filtering happens here.
+ */
+export function useCategoryLookup(kind: CategoryKind = 'expense') {
+  const { data: all = [], ...rest } = useCategories();
+  const value = useMemo(() => {
+    const categories = all.filter((c) => c.kind === kind);
+    return {
+      categories,
       tree: buildCategoryTree(categories),
       byId: new Map(categories.map((c) => [c.id, c])),
-    }),
-    [categories],
-  );
-  return { ...value, categories, ...rest };
+    };
+  }, [all, kind]);
+  return { ...value, ...rest };
 }
 
 export function useExpenses(params: ExpenseListParams) {
@@ -106,6 +114,52 @@ export function useDeleteAttachment() {
   return useMutation({
     mutationFn: (args: { expenseId: string; id: string }) =>
       api.attachments.remove(ws.id, args.expenseId, args.id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useEntries(kind: EntryKind, params: EntryListParams) {
+  const ws = useWorkspace();
+  return useQuery({
+    queryKey: ['entries', ws.id, kind, params],
+    queryFn: () => api.entries.list(ws.id, kind, params),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useEntry(kind: EntryKind, id: string | undefined) {
+  const ws = useWorkspace();
+  return useQuery({
+    queryKey: ['entry', ws.id, kind, id],
+    queryFn: () => api.entries.get(ws.id, kind, id!),
+    enabled: Boolean(id),
+  });
+}
+
+function useInvalidateEntryData() {
+  const qc = useQueryClient();
+  const ws = useWorkspace();
+  return () =>
+    Promise.all(['entries', 'entry', 'stats'].map((k) => qc.invalidateQueries({ queryKey: [k, ws.id] })));
+}
+
+export function useSaveEntry(kind: EntryKind) {
+  const ws = useWorkspace();
+  const invalidate = useInvalidateEntryData();
+  return useMutation({
+    mutationFn: (args: { id?: string; input: CreateEntryInput | UpdateEntryInput }) =>
+      args.id
+        ? api.entries.update(ws.id, kind, args.id, args.input)
+        : api.entries.create(ws.id, kind, args.input as CreateEntryInput),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteEntry(kind: EntryKind) {
+  const ws = useWorkspace();
+  const invalidate = useInvalidateEntryData();
+  return useMutation({
+    mutationFn: (id: string) => api.entries.remove(ws.id, kind, id),
     onSuccess: invalidate,
   });
 }

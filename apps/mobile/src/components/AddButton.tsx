@@ -1,14 +1,14 @@
 import { Pressable } from 'react-native';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '../lib/theme';
 
-export function AddButton() {
+export function AddButton({ href = '/expense', label = 'Add expense' }: { href?: Href; label?: string }) {
   const c = useColors();
   return (
     <Pressable
-      onPress={() => router.push('/expense')}
-      accessibilityLabel="Add expense"
+      onPress={() => router.push(href)}
+      accessibilityLabel={label}
       style={({ pressed }) => ({
         position: 'absolute',
         right: 20,

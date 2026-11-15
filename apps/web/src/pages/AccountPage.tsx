@@ -70,8 +70,10 @@ export function AccountPage() {
       <Card className="space-y-3 ring-rose-200 dark:ring-rose-900/60">
         <h2 className="font-semibold text-rose-700 dark:text-rose-300">Delete account</h2>
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          Permanently deletes your account, your workspace, and all its expenses, categories and attachments. This can't
-          be undone. See our{' '}
+          Permanently deletes your account and every household where you're the only member, with all their expenses,
+          income, investments, categories and attachments. You're removed from households you share; what you added
+          there stays, without your name. If you own a shared household, make someone else the owner first. This
+          can't be undone. See our{' '}
           <Link to="/privacy" className="text-brand-600 hover:underline">
             privacy policy
           </Link>
@@ -86,7 +88,7 @@ export function AccountPage() {
       <Modal open={open} title="Delete your account?" onClose={close}>
         <form onSubmit={submit} className="space-y-4">
           <p className="text-sm text-slate-600 dark:text-slate-400">
-            Everything in your workspace will be deleted immediately and permanently.
+            Your account and the households only you belong to will be deleted immediately and permanently.
           </p>
           <Field label={`Type your email (${user.email}) to confirm`}>
             <Input

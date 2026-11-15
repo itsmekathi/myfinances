@@ -6,12 +6,15 @@ import { currentMonth, monthRange } from '../lib/dates';
 import { MonthPicker } from '../components/MonthPicker';
 import { ExpenseListItem } from '../components/ExpenseListItem';
 import { Card, Select, Spinner } from '../components/ui';
+import { useCanWrite } from '../auth/AuthProvider';
+import { KindBadge } from '../lib/kinds';
 
 const PAGE_SIZE = 20;
 const linkButton =
   'inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700';
 
 export function ExpensesPage() {
+  const writable = useCanWrite();
   const [month, setMonth] = useState(currentMonth());
   const [categoryId, setCategoryId] = useState('');
   const [subcategoryId, setSubcategoryId] = useState('');
@@ -36,10 +39,13 @@ export function ExpensesPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">Expenses</h1>
-        <Link to="/expenses/new" className={linkButton}>
+        <div className="flex items-center gap-3">
+          <KindBadge kind="expense" />
+          <h1 className="text-2xl font-bold tracking-tight">Expenses</h1>
+        </div>
+        {writable && <Link to="/expenses/new" className={linkButton}>
           <Plus className="size-4" /> Add expense
-        </Link>
+        </Link>}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -84,9 +90,9 @@ export function ExpensesPage() {
         ) : !expenses.data?.items.length ? (
           <div className="py-16 text-center">
             <p className="text-sm text-slate-500">No expenses found for this period.</p>
-            <Link to="/expenses/new" className={`${linkButton} mt-4`}>
+            {writable && <Link to="/expenses/new" className={`${linkButton} mt-4`}>
               <Plus className="size-4" /> Add one
-            </Link>
+            </Link>}
           </div>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-slate-800">
