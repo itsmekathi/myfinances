@@ -27,14 +27,14 @@ export const expenseDetailInclude = {
 } as const;
 
 type ListRow = Expense & {
-  createdBy: UserRef;
+  createdBy: UserRef | null;
   updatedBy: UserRef | null;
   _count: { items: number; attachments: number };
 };
 
 type DetailRow = ListRow & {
   items: ExpenseItem[];
-  attachments: Array<Attachment & { uploadedBy: UserRef }>;
+  attachments: Array<Attachment & { uploadedBy: UserRef | null }>;
 };
 
 export function toExpenseDto(e: ListRow): ExpenseDto {
@@ -54,7 +54,7 @@ export function toExpenseDto(e: ListRow): ExpenseDto {
     paymentMethod: (e.paymentMethod as PaymentMethod | null) ?? null,
     itemCount: e._count.items,
     attachmentCount: e._count.attachments,
-    createdBy: { id: e.createdBy.id, displayName: e.createdBy.displayName },
+    createdBy: e.createdBy ? { id: e.createdBy.id, displayName: e.createdBy.displayName } : null,
     createdAt: e.createdAt.toISOString(),
     createdClient: (e.createdClient as ClientInfoDto | null) ?? null,
     updatedBy: e.updatedBy ? { id: e.updatedBy.id, displayName: e.updatedBy.displayName } : null,
@@ -73,14 +73,14 @@ export function toItemDto(i: ExpenseItem): ExpenseItemDto {
   };
 }
 
-export function toAttachmentDto(a: Attachment & { uploadedBy: UserRef }): AttachmentDto {
+export function toAttachmentDto(a: Attachment & { uploadedBy: UserRef | null }): AttachmentDto {
   return {
     id: a.id,
     fileName: a.fileName,
     mimeType: a.mimeType,
     sizeBytes: a.sizeBytes,
     createdAt: a.createdAt.toISOString(),
-    uploadedBy: { id: a.uploadedBy.id, displayName: a.uploadedBy.displayName },
+    uploadedBy: a.uploadedBy ? { id: a.uploadedBy.id, displayName: a.uploadedBy.displayName } : null,
   };
 }
 

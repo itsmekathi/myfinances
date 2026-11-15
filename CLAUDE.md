@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-MyFinances is an expense tracker in a pnpm + Turborepo monorepo:
+MyFinances tracks expenses, income and investment contributions. It is a pnpm + Turborepo monorepo:
 
 - `apps/api`: NestJS 12 REST API with Prisma 7 and PostgreSQL. Every route is under `/api`; Swagger docs are at `/api/docs`.
 - `apps/web`: React 19, Vite, Tailwind 4, TanStack Query and React Router 8.
@@ -21,10 +21,17 @@ The web and mobile apps consume the shared packages from their compiled `dist/`.
 - This is enforced by a GitHub ruleset (`.github/rulesets/branch-naming.json`) and by the first step of CI.
 - `main` is protected by `.github/rulesets/protect-main.json`: changes go through a PR, and the PR needs a passing `checks / checks`. No direct pushes or force pushes.
 - `.github/workflows/deploy-production.yml` deploys `main` to production; `deploy-staging.yml` deploys `feature/*` branches to staging (Render API and Vercel). Both run the reusable `checks.yml` first. Deploy jobs use the `production`/`staging` GitHub environments, so environment protection rules (e.g. required reviewers) gate them.
-- Playwright runs in three places:
-  - inside `checks.yml` against the built apps on the runner (target `local`)
-  - after each deploy, as the `e2e` job (reusable `e2e.yml`). It first waits until `/api/health/live` reports the deployed `version` (`GIT_SHA`, a Docker build arg).
-  - manually, via **Actions → E2E (Playwright)**
+- **Deploys are path-filtered.** Both deploy workflows start with the reusable `changes.yml`. It diffs against the last *successful* run of that workflow on the branch, not the previous commit, so a failed deploy is retried on the next push. A branch's first run, or a run after a force push, has no base, so everything deploys.
+  - `api` deploys only when `.github/filters.yml`'s `api` paths change: apps/api, packages/shared and the root workspace files.
+  - `web` deploys only for the `web` paths: apps/web, packages/shared, packages/api-client and the root files.
+  - Mobile, e2e and workflow-only edits deploy nothing.
+  - Docs-only changes (`*.md`, `deployment/`, `.github/rulesets/`): `checks / checks` still runs and reports, since it's required on `main`, but skips every step after the branch-name check (the `checks.yml` input `run`).
+  - **Run workflow** with `force` deploys both regardless. Use it after a workflow-only change, or to reset staging, which every `feature/*` branch shares.
+- Playwright runs in four places:
+  - inside `checks.yml` against the built apps on the runner (target `local`), when code changed
+  - after a deploy, as the `e2e` job (reusable `e2e.yml`), only if the API or web app was actually deployed. After an API deploy it first waits until `/api/health/live` reports the deployed `version` (`GIT_SHA`, a Docker build arg). A web-only deploy passes no `expected-sha`.
+  - nightly at 02:30 UTC (08:00 IST): the full suite against production (`schedule` in `e2e.yml`). Inputs are empty on a schedule, hence the `inputs.target || 'production'` fallbacks.
+  - manually, via **Actions → E2E (Playwright)**: pick `staging`, `production` or `local`, and a suite
   `e2e.yml` has no `environment:` (so no second approval) and reads the repository secret `VERCEL_AUTOMATION_BYPASS_SECRET` for the protected staging site. The shared steps live in `.github/actions/playwright`.
 - `apps/web/vercel.json` uses `routes` (not `rewrites`). The first route sets `Cross-Origin-Opener-Policy: same-origin-allow-popups` on every page (`continue: true`), which the Google sign-in popup needs; `vite.config.ts` sets the same header locally. The `/api` route adds `x-proxy-secret: $PROXY_SECRET` via a request-header transform, then `handle: filesystem` and the SPA fallback come after it. The deploy workflows rewrite that route's `dest` per environment. `AppThrottlerGuard` (`common/client-ip.ts`) trusts the first `X-Forwarded-For` entry only when the secret matches.
 - `.github/workflows/keep-awake.yml` pings production's `/api/health/live` (no DB query) every 5 minutes during IST waking hours. It isn't 24/7, because Render's 750 free hours a month are shared with staging, and running out suspends production.
@@ -87,7 +94,7 @@ Mobile (inside `apps/mobile`):
 - Google sign-in verifies the ID token against `GOOGLE_CLIENT_IDS`. If a Google login matches an unverified password account, the password is removed (prevents account pre-hijacking).
 
 **Multi-tenancy.**
-- All data lives in a `Workspace`; each user gets a personal one at signup (`WorkspacesService.createPersonal`).
+- All data lives in a `Workspace` (a "household" in the UI). Sign-up creates **no** workspace: the user then creates one (`POST workspaces`; they become owner and default categories are seeded) or asks to join one. Clients send users without a workspace to `/welcome` (web) / `welcome` (mobile).
 - Routes look like `workspaces/:workspaceId/...` and are protected by `WorkspaceGuard`, which:
   - checks `WorkspaceMember`
   - returns 404 rather than 403 for non-members
@@ -95,7 +102,14 @@ Mobile (inside `apps/mobile`):
   - attaches the result for `@CurrentWorkspace()`
 - **Every query must also filter by `workspaceId`**, and by the parent id for nested resources.
 
-**Money.** Amounts are integer minor units (`amountMinor`), stored as `BigInt` in the DB and returned as `number`. Use `toMinor`, `fromMinor` and `formatMoney` from shared; never use floats for stored values. Stats only sum expenses in the workspace's `baseCurrency` (default INR).
+**Roles** (`workspaces/workspaces.service.ts`; helpers in shared `workspaces.ts`):
+- Workspace roles: `owner` (exactly one) > `admin` > `editor` > `viewer`. Owners and admins approve join requests and manage members, but only members ranked below them. Admins grant editor/viewer; owners (and site admins, on approval) can also grant admin. `PATCH workspaces/:id/members/:userId {role: "owner"}` transfers ownership, and the old owner becomes an admin. The owner can't leave without transferring; anyone else can `DELETE members/<own id>`.
+- Site role: `User.role` = `user | admin` (`siteRole` in `UserDto`). Site admins see every pending request at `GET admin/join-requests` (404 for everyone else, `SiteAdminGuard`) and can approve or reject for any workspace without becoming a member. `SITE_ADMIN_EMAILS` promotes listed accounts once their email is verified (Google sign-in), at startup and on Google sign-in. Password sign-ups are never verified, so nobody can squat the role.
+- Every workspace is searchable (`GET workspaces/search?q=`, at least 2 chars). Results show the name, currency, member count and the owner's and admins' display names, never financial data.
+- `JoinRequest` has one row per (workspace, user); asking again after a rejection or cancellation reopens it. Routes: `POST workspaces/:id/join-requests`, `GET workspaces/:id/join-requests` (managers), `GET join-requests/mine`, `POST join-requests/:id/approve|reject|cancel`. A decision only applies while the request is still pending. The member and join-request routes don't use `WorkspaceGuard` (non-members ask to join, viewers may leave); the service checks roles and returns 404 to non-members.
+- Web keeps the selected workspace in localStorage (`mf.workspace`), mobile in SecureStore; both have a switcher. Query keys: `['members' | 'joinRequests', workspaceId]`, `['myJoinRequests']`, `['adminJoinRequests']`, `['workspaceSearch', q]`.
+
+**Money.** Amounts are integer minor units (`amountMinor`), stored as `BigInt` in the DB and returned as `number`. Use `toMinor`, `fromMinor` and `formatMoney` from shared; never use floats for stored values. Stats only sum amounts in the workspace's `baseCurrency` (default INR). The summary returns expenses (`totalMinor`/`expensesMinor`, `byCategory`, `byDay`), `incomeMinor`, `investedMinor` and `netMinor` = income − expenses − invested.
 
 **Expenses** (`expenses/expenses.service.ts`, `expense.mapper.ts`):
 - **Items:** when `items` is sent, the total is computed from them (`itemAmountMinor` = round(qty × unit price)). An update with `items` replaces all items. While items exist, `amountMinor` can't be edited directly.
@@ -103,12 +117,19 @@ Mobile (inside `apps/mobile`):
 - **Audit:** `createdBy`, `createdClient`, `updatedBy` and `updatedClient` are recorded via the `@ClientInfo()` decorator (`common/client-info.ts`). It combines the User-Agent (parsed with `bowser`) with the mobile headers `X-Client-Platform` and `X-App-Version`.
 - **Responses:** list endpoints return `ExpenseDto` with counts. `GET :id` returns `ExpenseDetailDto` with items and attachments.
 
+**Income and investments** (`entries/`):
+- One `Entry` model with `kind: income | investment`. Contributions only: no holdings, units or valuations.
+- Served at `workspaces/:id/income` and `workspaces/:id/investments`: two controllers built by `entriesController()` on one `EntriesService`. Every query filters by `workspaceId` **and** `kind`, so an income id 404s under `/investments`.
+- Fields: amount, currency, date, category/subcategory (same rules as expenses), `source` (payer or instrument), note, tags and audit info. No items or attachments.
+- api-client: `api.entries.*(workspaceId, kind, ...)`.
+
 **Categories.**
+- Each category has a `kind`: `expense` (default), `income` or `investment`. A subcategory always takes its parent's kind. Expenses and entries only accept categories of their own kind. `GET categories?kind=` filters; clients fetch all and filter with `useCategoryLookup(kind)`.
 - Categories are two levels deep: `parentId` set means a subcategory.
 - The API returns a flat list; clients nest it with `buildCategoryTree`.
-- Postgres treats NULL `parentId` values as distinct, so the unique index `[workspaceId, parentId, name]` doesn't catch duplicate top-level names. The controller checks those itself.
+- Postgres treats NULL `parentId` values as distinct, so the unique index `[workspaceId, kind, parentId, name]` doesn't catch duplicate top-level names. The controller checks those itself.
 - Deleting a parent also deletes its children.
-- Default categories live in `DEFAULT_CATEGORIES` (shared) and are seeded by `workspaces/default-categories.ts`.
+- Defaults live in `DEFAULT_CATEGORIES_BY_KIND` (shared) and are seeded by `workspaces/default-categories.ts`. The `income_investments` migration backfilled the income/investment defaults into existing workspaces.
 
 **Attachments.**
 - `StorageService` stores files under random UUID keys, so user file names never become paths. `STORAGE_DRIVER` picks the driver: `local` disk (default; dev and e2e) or `s3` (Cloudflare R2 in production, configured by `S3_*` env vars). Downloads always stream through the API; buckets stay private. A record whose file is missing returns 404.
@@ -119,13 +140,13 @@ Mobile (inside `apps/mobile`):
 
 **Account deletion** (`DELETE /api/me`, `UsersService.deleteAccount`):
 - The user types their email to confirm. Password accounts also give their password; Google-only accounts don't need one.
-- Every workspace where the user is the only member is deleted (expenses, items, attachments, categories), then the user. Stored files are removed after the commit.
-- It returns 409 if the user shares a workspace with others. `Expense.createdBy` and `Attachment.uploadedBy` are `Restrict`, so revisit this when sharing ships.
+- Every workspace where the user is the only member is deleted (expenses, items, attachments, income/investment entries, categories), then the user. Stored files are removed after the commit.
+- In shared workspaces the user is only removed. `Expense.createdBy`, `Entry.createdBy` and `Attachment.uploadedBy` are nullable with `SetNull`, so their records stay and show "a deleted user". It returns 409 if the user **owns** a shared workspace; they must transfer ownership first.
 - The web refresh cookie is cleared. Access tokens stay valid until they expire, but every route then 404s because the user is gone.
 - UI: web `/account` (`AccountPage.tsx`), mobile `src/app/account.tsx`. The privacy policy describes this flow, so keep them in sync.
 
 **Clients.**
-- **Web:** `/` shows the public `HomePage` to signed-out visitors and the dashboard to signed-in users; `/privacy` is public. Both are the Google OAuth consent screen's home page and privacy policy links, so keep them public and the policy accurate when data handling changes. `AuthProvider` restores the session on load via `api.auth.restore()`, which de-duplicates concurrent refreshes and is StrictMode-safe. Query keys follow the pattern `['expenses' | 'expense' | 'stats' | 'categories', workspaceId, ...]`, and mutations invalidate by that prefix. The expense editor is a full page at `/expenses/new` and `/expenses/:id`.
+- **Web:** `/` shows the public `HomePage` to signed-out visitors and the dashboard to signed-in users; `/privacy` is public. Both are the Google OAuth consent screen's home page and privacy policy links, so keep them public and the policy accurate when data handling changes. `AuthProvider` restores the session on load via `api.auth.restore()`, which de-duplicates concurrent refreshes and is StrictMode-safe. Query keys follow the pattern `['expenses' | 'expense' | 'entries' | 'entry' | 'stats' | 'categories', workspaceId, ...]`, and mutations invalidate by that prefix. The expense editor is a full page at `/expenses/new` and `/expenses/:id`. Income and investments share `EntriesPage`/`EntryEditorPage` at `/income[/new|/:id]` and `/investments[/new|/:id]`; `?copy=<id>` on `new` duplicates an entry.
 - **Mobile:** `Stack.Protected` guards routes based on auth status. The Google Sign-In native module is `require`d only when `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` is set, so password login still works in Expo Go. Its config plugin is only added when an iOS client ID exists, because the plugin throws without `iosUrlScheme`.
 
 ## Mobile app rules (from `apps/mobile/AGENTS.md`)
@@ -140,7 +161,10 @@ Mobile (inside `apps/mobile`):
 
 - **Fixtures** (`src/fixtures.ts`):
   - `account` is one user per worker, shared across that worker's tests, so use unique names and tags (`uniqueTag()`).
-  - `newAccount()` gives a test its own user.
+  - `newAccount()` gives a test its own user. `registerAccount` also creates a uniquely named household, unless you pass `{ workspace: false }`.
+  - Tests that add members to a workspace must remove them again (see `tests/api/households.spec.ts`). Teardown deletes accounts one at a time, and an owner can't be deleted while others are members.
+- **Roles:** `tests/api/roles.spec.ts` checks every workspace endpoint as each role (2xx, 403 or 404). Add new `workspaces/:id` endpoints to it. Site admins can't be created on staging or production, so their flow is covered only by the Jest suite.
+- **Web role gating:** `useCanWrite()` (from `AuthProvider`, based on shared `canWrite(role)`) hides add, edit and delete controls from viewers. The editors render inside a disabled `<fieldset>` with a `ReadOnlyNotice`, and `/…/new` redirects viewers back to the list. The API still enforces every rule.
   - `loggedInPage` signs in through `page.request` on the web origin, so the refresh cookie lands in the browser.
 - **Cleanup:** every account a run creates goes into the ledger `e2e/.accounts/<target>/`, along with its latest tokens. Global teardown deletes them one at a time via `DELETE /api/me`, including leftovers from interrupted runs. Fixtures don't delete accounts themselves: `DELETE /me` allows 5 requests a minute, and two workers deleting at once ran into 429s. Tests must clean up anything else they create, because production runs the full suite.
 - **Rate limits** (per IP): login and register 10/min each, `DELETE /me` 5/min. `ApiClient` keeps retrying a 429 after `Retry-After`, for up to 150s per call. Browser requests aren't retried: for rate-limited buttons, use `clickRateLimited()`. Keep `workers: 2`.

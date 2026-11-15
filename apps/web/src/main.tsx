@@ -1,6 +1,6 @@
 import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ApiError } from '@myfinances/api-client';
@@ -11,10 +11,15 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { ExpenseEditorPage } from './pages/ExpenseEditorPage';
+import { EntriesPage } from './pages/EntriesPage';
+import { EntryEditorPage } from './pages/EntryEditorPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { HomePage } from './pages/HomePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { AccountPage } from './pages/AccountPage';
+import { WelcomePage } from './pages/WelcomePage';
+import { HouseholdPage } from './pages/HouseholdPage';
+import { AdminPage } from './pages/AdminPage';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -42,6 +47,12 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return children;
 }
 
+/** Pages that work on a workspace. Without one, the user picks "create" or "join" first. */
+function RequireWorkspace() {
+  const { workspace } = useAuth();
+  return workspace ? <Outlet /> : <Navigate to="/welcome" replace />;
+}
+
 function App() {
   return (
     <Routes>
@@ -54,12 +65,23 @@ function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<DashboardPage />} />
-        <Route path="expenses" element={<ExpensesPage />} />
-        <Route path="expenses/new" element={<ExpenseEditorPage />} />
-        <Route path="expenses/:id" element={<ExpenseEditorPage />} />
-        <Route path="categories" element={<CategoriesPage />} />
+        <Route path="welcome" element={<WelcomePage />} />
         <Route path="account" element={<AccountPage />} />
+        <Route path="admin" element={<AdminPage />} />
+        <Route element={<RequireWorkspace />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="expenses" element={<ExpensesPage />} />
+          <Route path="expenses/new" element={<ExpenseEditorPage />} />
+          <Route path="expenses/:id" element={<ExpenseEditorPage />} />
+          <Route path="income" element={<EntriesPage kind="income" />} />
+          <Route path="income/new" element={<EntryEditorPage kind="income" />} />
+          <Route path="income/:id" element={<EntryEditorPage kind="income" />} />
+          <Route path="investments" element={<EntriesPage kind="investment" />} />
+          <Route path="investments/new" element={<EntryEditorPage kind="investment" />} />
+          <Route path="investments/:id" element={<EntryEditorPage kind="investment" />} />
+          <Route path="categories" element={<CategoriesPage />} />
+          <Route path="household" element={<HouseholdPage />} />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -1,5 +1,7 @@
 # main only: checks, then deploys to production
 # (Render production API, Vercel production, Neon `main` branch).
+# Only what changed deploys: changes.yml diffs against the last successful run on main
+# (paths in .github/filters.yml). "Run workflow" with force deploys both.
 # Deploy steps are skipped (with a warning) until their secrets are configured.
 # Feature branches use deploy-staging.yml. Setup: deployment/setup-guide.md
 name: Deploy production
@@ -8,6 +10,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: Deploy the API and web app even if they did not change
+        type: boolean
+        default: false
 
 # Queue production runs instead of cancelling one halfway through a deploy.
 concurrency:
@@ -21,14 +28,27 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/myfinances-api
 
 jobs:
+  # What changed since the last successful run: decides which jobs below do real work.
+  changes:
+    uses: ./.github/workflows/changes.yml
+    permissions:
+      contents: read
+      actions: read
+    with:
+      force: ${{ inputs.force || false }}
+
   checks:
+    needs: changes
     uses: ./.github/workflows/checks.yml
+    with:
+      # Docs-only: the job still reports (required check) but skips build and tests.
+      run: ${{ needs.changes.outputs.code == 'true' }}
 
   api:
     name: api (production)
     # Guards a manual run on another branch from deploying it to production.
-    if: github.ref == 'refs/heads/main'
-    needs: checks
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.api == 'true'
+    needs: [changes, checks]
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -83,10 +103,13 @@ jobs:
     # Runs alongside api (both after checks) so that, with required reviewers on the
     # environment, one approval releases both jobs. The Render hook only triggers a
     # deploy and doesn't wait for it, so ordering after api guaranteed nothing anyway.
-    if: github.ref == 'refs/heads/main'
-    needs: checks
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.web == 'true'
+    needs: [changes, checks]
     runs-on: ubuntu-latest
     environment: production
+    outputs:
+      # true once Vercel deployed; gates the e2e job.
+      deployed: ${{ steps.deploy.outputs.deployed }}
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -130,23 +153,29 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
           '
       - name: Build and deploy to Vercel (production)
+        id: deploy
         if: steps.guard.outputs.enabled == 'true'
         run: |
           npm install -g vercel@latest
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
           url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
           echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
 
-  # Playwright suites against the new deployment. Waits until the API serves this commit
-  # (the Render hook returns before the deploy is live). Skipped when nothing was deployed.
+  # Playwright suites against the new deployment, when the API or the web app was deployed
+  # (both may be skipped as unchanged). After an API deploy it first waits until the API
+  # serves this commit (the Render hook returns before the deploy is live); a Vercel
+  # deploy is already live when `vercel deploy` returns.
   e2e:
     name: e2e (production)
     needs: [api, web]
-    if: needs.api.outputs.deployed == 'true'
+    if: >-
+      !cancelled() && !contains(needs.*.result, 'failure') &&
+      (needs.api.outputs.deployed == 'true' || needs.web.outputs.deployed == 'true')
     uses: ./.github/workflows/e2e.yml
     with:
       target: production
       suite: all
-      expected-sha: ${{ github.sha }}
+      expected-sha: ${{ needs.api.outputs.deployed == 'true' && github.sha || '' }}
     secrets: inherit

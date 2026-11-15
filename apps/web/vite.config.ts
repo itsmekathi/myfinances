@@ -12,7 +12,8 @@ export default defineConfig({
   server: {
     port: 5173,
     // Same-origin API calls in dev, so the refresh cookie just works.
-    proxy: { '/api': 'http://localhost:3000' },
+    // API_PROXY_TARGET overrides the API address, e.g. when another app already uses port 3000.
+    proxy: { '/api': process.env.API_PROXY_TARGET ?? 'http://localhost:3000' },
     headers,
   },
   preview: { headers },

@@ -41,6 +41,19 @@ export const envSchema = z.object({
   S3_BUCKET: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /**
+   * Comma-separated emails that become site admins once the email is verified (Google sign-in).
+   * Password sign-ups never verify their email, so a squatter can't claim the role.
+   */
+  SITE_ADMIN_EMAILS: z
+    .string()
+    .default('')
+    .transform((s) =>
+      s
+        .split(',')
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   DEFAULT_CURRENCY: z.string().length(3).toUpperCase().default('INR'),
   /** The deployed commit, baked into the image (Dockerfile ARG). /api/health/live reports it. */
   GIT_SHA: z.string().default('dev'),

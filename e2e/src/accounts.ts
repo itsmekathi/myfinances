@@ -2,7 +2,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import type { AuthResponse, UserDto } from '@myfinances/shared';
 import { ApiClient, expectJson } from './api-client';
-import { newCredentials } from './data';
+import { newCredentials, uniqueTag } from './data';
 import { resolveTarget } from './targets';
 
 export const MOBILE = { 'X-Client-Type': 'mobile' };
@@ -16,9 +16,12 @@ export interface AccountData {
   user: UserDto;
   accessToken: string;
   refreshToken: string;
+  /** The household created at registration; empty when registered with `workspace: false`. */
   workspaceId: string;
-  /** /api/workspaces/<id> */
+  /** /api/workspaces/<id> (empty without a workspace) */
   base: string;
+  /** The household's (unique) name. */
+  workspaceName: string;
   issuedAt: number;
 }
 
@@ -62,20 +65,37 @@ export function rememberedAccounts(): Deletable[] {
   });
 }
 
-/** Registers a user (mobile flow, so the refresh token comes back in the body). */
-export async function registerAccount(api: ApiClient, label: string): Promise<AccountData> {
+/**
+ * Registers a user (mobile flow, so the refresh token comes back in the body). Sign-up creates
+ * no workspace, so by default this also creates a household for the user (uniquely named, since
+ * every household is searchable and production runs the suite).
+ */
+export async function registerAccount(
+  api: ApiClient,
+  label: string,
+  { workspace = true }: { workspace?: boolean } = {},
+): Promise<AccountData> {
   const creds = newCredentials(label);
   rememberAccount(creds);
   const auth = await expectJson<AuthResponse>(await api.as(undefined, MOBILE).post('/api/auth/register', creds), 201);
-  const me = await expectJson<{ workspaces: { id: string }[] }>(await api.as(auth.accessToken).get('/api/me'), 200);
-  const workspaceId = me.workspaces[0].id;
+  let workspaceId = '';
+  let workspaceName = '';
+  if (workspace) {
+    workspaceName = uniqueTag(`${label}-home`);
+    const ws = await expectJson<{ id: string }>(
+      await api.as(auth.accessToken).post('/api/workspaces', { name: workspaceName }),
+      201,
+    );
+    workspaceId = ws.id;
+  }
   const account: AccountData = {
     ...creds,
     user: auth.user,
     accessToken: auth.accessToken,
     refreshToken: auth.refreshToken!,
     workspaceId,
-    base: `/api/workspaces/${workspaceId}`,
+    workspaceName,
+    base: workspaceId ? `/api/workspaces/${workspaceId}` : '',
     issuedAt: Date.now(),
   };
   rememberAccount(account);

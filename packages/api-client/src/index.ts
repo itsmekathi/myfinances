@@ -1,7 +1,11 @@
 import type {
   AuthResponse,
   CategoryDto,
+  CategoryKind,
   CreateCategoryInput,
+  CreateEntryInput,
+  EntryDto,
+  EntryKind,
   CreateExpenseInput,
   AttachmentDto,
   ExpenseDetailDto,
@@ -13,8 +17,17 @@ import type {
   RegisterInput,
   StatsSummary,
   UpdateCategoryInput,
+  UpdateEntryInput,
   UpdateExpenseInput,
   UserDto,
+  ApproveJoinRequestInput,
+  CreateJoinRequestInput,
+  CreateWorkspaceInput,
+  JoinRequestDto,
+  MemberDto,
+  UpdateMemberInput,
+  WorkspaceSearchResultDto,
+  WorkspaceSummaryDto,
 } from '@myfinances/shared';
 
 export interface ApiClientOptions {
@@ -64,6 +77,11 @@ export interface ExpenseListParams {
   page?: number;
   pageSize?: number;
 }
+
+export type EntryListParams = ExpenseListParams;
+
+/** URL segment for each entry kind. */
+const ENTRY_PATHS: Record<EntryKind, string> = { income: 'income', investment: 'investments' };
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -190,6 +208,37 @@ export function createApiClient(opts: ApiClientOptions) {
 
     me: () => request<MeResponse>('GET', '/me'),
 
+    workspaces: {
+      /** Creates a household; the caller becomes its owner. */
+      create: (input: CreateWorkspaceInput) => request<WorkspaceSummaryDto>('POST', '/workspaces', input),
+      search: (q: string) => request<WorkspaceSearchResultDto[]>('GET', `/workspaces/search${queryString({ q })}`),
+      members: (workspaceId: string) => request<MemberDto[]>('GET', `${ws(workspaceId)}/members`),
+      /** Role "owner" transfers ownership. Returns the updated member list. */
+      updateMember: (workspaceId: string, userId: string, input: UpdateMemberInput) =>
+        request<MemberDto[]>('PATCH', `${ws(workspaceId)}/members/${userId}`, input),
+      /** Removes a member; pass your own id to leave. */
+      removeMember: (workspaceId: string, userId: string) =>
+        request<void>('DELETE', `${ws(workspaceId)}/members/${userId}`),
+    },
+
+    joinRequests: {
+      create: (workspaceId: string, input: CreateJoinRequestInput = {}) =>
+        request<JoinRequestDto>('POST', `${ws(workspaceId)}/join-requests`, input),
+      /** Pending requests for a workspace (owners and admins). */
+      listForWorkspace: (workspaceId: string) =>
+        request<JoinRequestDto[]>('GET', `${ws(workspaceId)}/join-requests`),
+      mine: () => request<JoinRequestDto[]>('GET', '/join-requests/mine'),
+      approve: (id: string, input: ApproveJoinRequestInput = {}) =>
+        request<JoinRequestDto>('POST', `/join-requests/${id}/approve`, input),
+      reject: (id: string) => request<JoinRequestDto>('POST', `/join-requests/${id}/reject`, {}),
+      cancel: (id: string) => request<JoinRequestDto>('POST', `/join-requests/${id}/cancel`, {}),
+    },
+
+    admin: {
+      /** Site admins: pending join requests across every workspace. */
+      pendingJoinRequests: () => request<JoinRequestDto[]>('GET', '/admin/join-requests'),
+    },
+
     account: {
       /** Permanently deletes the account and all its data, then ends the local session. */
       delete: async (input: DeleteAccountInput) => {
@@ -199,7 +248,9 @@ export function createApiClient(opts: ApiClientOptions) {
     },
 
     categories: {
-      list: (workspaceId: string) => request<CategoryDto[]>('GET', `${ws(workspaceId)}/categories`),
+      /** All kinds unless `kind` is given. */
+      list: (workspaceId: string, kind?: CategoryKind) =>
+        request<CategoryDto[]>('GET', `${ws(workspaceId)}/categories${queryString({ kind })}`),
       create: (workspaceId: string, input: CreateCategoryInput) =>
         request<CategoryDto>('POST', `${ws(workspaceId)}/categories`, input),
       update: (workspaceId: string, id: string, input: UpdateCategoryInput) =>
@@ -219,6 +270,20 @@ export function createApiClient(opts: ApiClientOptions) {
         request<ExpenseDetailDto>('PATCH', `${ws(workspaceId)}/expenses/${id}`, input),
       remove: (workspaceId: string, id: string) =>
         request<void>('DELETE', `${ws(workspaceId)}/expenses/${id}`),
+    },
+
+    /** Income and investment entries; `kind` picks `/income` or `/investments`. */
+    entries: {
+      list: (workspaceId: string, kind: EntryKind, params: EntryListParams = {}) =>
+        request<Paginated<EntryDto>>('GET', `${ws(workspaceId)}/${ENTRY_PATHS[kind]}${queryString(params)}`),
+      get: (workspaceId: string, kind: EntryKind, id: string) =>
+        request<EntryDto>('GET', `${ws(workspaceId)}/${ENTRY_PATHS[kind]}/${id}`),
+      create: (workspaceId: string, kind: EntryKind, input: CreateEntryInput) =>
+        request<EntryDto>('POST', `${ws(workspaceId)}/${ENTRY_PATHS[kind]}`, input),
+      update: (workspaceId: string, kind: EntryKind, id: string, input: UpdateEntryInput) =>
+        request<EntryDto>('PATCH', `${ws(workspaceId)}/${ENTRY_PATHS[kind]}/${id}`, input),
+      remove: (workspaceId: string, kind: EntryKind, id: string) =>
+        request<void>('DELETE', `${ws(workspaceId)}/${ENTRY_PATHS[kind]}/${id}`),
     },
 
     attachments: {

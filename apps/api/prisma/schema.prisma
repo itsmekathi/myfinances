@@ -13,10 +13,37 @@ enum AuthProvider {
   google
 }
 
+/// Site-wide role. Site admins can approve join requests for any workspace.
+enum UserRole {
+  user
+  admin
+}
+
+/// Role inside a workspace (household). Exactly one owner per workspace.
 enum WorkspaceRole {
   owner
+  admin
   editor
   viewer
+}
+
+enum JoinRequestStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/// Which list a category belongs to.
+enum CategoryKind {
+  expense
+  income
+  investment
+}
+
+enum EntryKind {
+  income
+  investment
 }
 
 enum PaymentMethod {
@@ -29,23 +56,28 @@ enum PaymentMethod {
 }
 
 model User {
-  id            String    @id @default(uuid()) @db.Uuid
-  email         String    @unique
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
   /// True once a trusted provider (e.g. Google) has confirmed the email.
-  emailVerified Boolean   @default(false)
-  username      String?   @unique
+  emailVerified Boolean  @default(false)
+  username      String?  @unique
   displayName   String?
   avatarUrl     String?
   passwordHash  String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  role          UserRole @default(user)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  identities    AuthIdentity[]
-  refreshTokens RefreshToken[]
-  memberships   WorkspaceMember[]
-  expenses        Expense[] @relation("ExpenseCreatedBy")
-  updatedExpenses Expense[] @relation("ExpenseUpdatedBy")
+  identities      AuthIdentity[]
+  refreshTokens   RefreshToken[]
+  memberships     WorkspaceMember[]
+  expenses        Expense[]         @relation("ExpenseCreatedBy")
+  updatedExpenses Expense[]         @relation("ExpenseUpdatedBy")
   attachments     Attachment[]
+  entries         Entry[]           @relation("EntryCreatedBy")
+  updatedEntries  Entry[]           @relation("EntryUpdatedBy")
+  joinRequests    JoinRequest[]     @relation("JoinRequestUser")
+  decidedRequests JoinRequest[]     @relation("JoinRequestDecidedBy")
 }
 
 /// External sign-in providers linked to a user (Google now; Apple/GitHub later).
@@ -65,14 +97,14 @@ model AuthIdentity {
 /// Rotating refresh tokens. Only a SHA-256 hash is stored.
 /// All tokens from one login share a familyId so reuse of an old token revokes the whole family.
 model RefreshToken {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  familyId   String    @db.Uuid
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  userAgent  String?
-  createdAt  DateTime  @default(now())
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  familyId  String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -90,6 +122,8 @@ model Workspace {
   members    WorkspaceMember[]
   categories Category[]
   expenses   Expense[]
+  entries    Entry[]
+  joinRequests JoinRequest[]
 }
 
 model WorkspaceMember {
@@ -105,24 +139,51 @@ model WorkspaceMember {
   @@index([userId])
 }
 
+/// A user asking to join a workspace. One row per (workspace, user); asking again after a
+/// rejection or cancellation reopens it as pending.
+model JoinRequest {
+  id          String            @id @default(uuid()) @db.Uuid
+  workspaceId String            @db.Uuid
+  userId      String            @db.Uuid
+  message     String?
+  status      JoinRequestStatus @default(pending)
+  /// The role granted on approval.
+  grantedRole WorkspaceRole?
+  decidedById String?           @db.Uuid
+  decidedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("JoinRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  decidedBy User?     @relation("JoinRequestDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@index([status])
+}
+
 model Category {
-  id          String   @id @default(uuid()) @db.Uuid
-  workspaceId String   @db.Uuid
+  id          String       @id @default(uuid()) @db.Uuid
+  workspaceId String       @db.Uuid
+  kind        CategoryKind @default(expense)
   name        String
   icon        String?
-  color       String?  @db.Char(7)
-  parentId    String?  @db.Uuid
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  color       String?      @db.Char(7)
+  parentId    String?      @db.Uuid
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
-  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Category[] @relation("CategoryTree")
-  expenses      Expense[] @relation("ExpenseCategory")
-  subExpenses   Expense[] @relation("ExpenseSubcategory")
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryTree")
+  expenses    Expense[]  @relation("ExpenseCategory")
+  subExpenses Expense[]  @relation("ExpenseSubcategory")
+  entries     Entry[]    @relation("EntryCategory")
+  subEntries  Entry[]    @relation("EntrySubcategory")
 
   /// Postgres treats NULL parentIds as distinct, so the API also checks duplicate top-level names.
-  @@unique([workspaceId, parentId, name])
+  @@unique([workspaceId, kind, parentId, name])
 }
 
 model Expense {
@@ -145,16 +206,16 @@ model Expense {
   paymentMethod PaymentMethod?
 
   // Audit metadata
-  createdById   String         @db.Uuid
-  createdAt     DateTime       @default(now())
+  createdById   String?  @db.Uuid
+  createdAt     DateTime @default(now())
   /// { type, browser, browserVersion, os, device, appVersion, userAgent }
   createdClient Json?
-  updatedById   String?        @db.Uuid
-  updatedAt     DateTime       @updatedAt
+  updatedById   String?  @db.Uuid
+  updatedAt     DateTime @updatedAt
   updatedClient Json?
 
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy   User          @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy   User?         @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy   User?         @relation("ExpenseUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   category    Category?     @relation("ExpenseCategory", fields: [categoryId], references: [id], onDelete: SetNull)
   subcategory Category?     @relation("ExpenseSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
@@ -187,7 +248,7 @@ model Attachment {
   id           String   @id @default(uuid()) @db.Uuid
   expenseId    String   @db.Uuid
   workspaceId  String   @db.Uuid
-  uploadedById String   @db.Uuid
+  uploadedById String?  @db.Uuid
   fileName     String
   mimeType     String
   sizeBytes    Int
@@ -195,7 +256,42 @@ model Attachment {
   createdAt    DateTime @default(now())
 
   expense    Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-  uploadedBy User    @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  uploadedBy User?   @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@index([expenseId])
+}
+
+/// Income received or money put into an investment. Same shape for both; `kind` tells them apart.
+model Entry {
+  id            String    @id @default(uuid()) @db.Uuid
+  workspaceId   String    @db.Uuid
+  kind          EntryKind
+  categoryId    String?   @db.Uuid
+  subcategoryId String?   @db.Uuid
+  /// Integer minor units (cents/paise). Never store money as floats.
+  amountMinor   BigInt
+  currency      String    @db.Char(3)
+  date          DateTime  @db.Date
+  /// Who paid (income) or what was invested in (investment).
+  source        String?
+  note          String?
+  tags          String[]  @default([])
+
+  // Audit metadata
+  createdById   String?  @db.Uuid
+  createdAt     DateTime @default(now())
+  createdClient Json?
+  updatedById   String?  @db.Uuid
+  updatedAt     DateTime @updatedAt
+  updatedClient Json?
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User?     @relation("EntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy   User?     @relation("EntryUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  category    Category? @relation("EntryCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategory Category? @relation("EntrySubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, kind, date])
+  @@index([workspaceId, categoryId])
+  @@index([tags], type: Gin)
 }

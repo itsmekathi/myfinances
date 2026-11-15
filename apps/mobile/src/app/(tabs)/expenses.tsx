@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useCategories, useExpenses } from '../../hooks/queries';
+import { useCategoryLookup, useExpenses } from '../../hooks/queries';
 import { currentMonth, monthRange } from '../../lib/dates';
 import { useColors } from '../../lib/theme';
 import { Button, Chip } from '../../components/ui';
@@ -19,8 +19,7 @@ export default function ExpensesScreen() {
   const [page, setPage] = useState(1);
   const { from, to } = monthRange(month);
   const expenses = useExpenses({ from, to, categoryId, page, pageSize: PAGE_SIZE });
-  const { data: categories = [] } = useCategories();
-  const catById = useMemo(() => new Map(categories.map((x) => [x.id, x])), [categories]);
+  const { tree, byId: catById } = useCategoryLookup('expense');
   const totalPages = expenses.data ? Math.max(1, Math.ceil(expenses.data.total / PAGE_SIZE)) : 1;
 
   return (
@@ -30,7 +29,7 @@ export default function ExpensesScreen() {
         <MonthPicker value={month} onChange={(m) => { setMonth(m); setPage(1); }} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           <Chip label="All" selected={!categoryId} onPress={() => { setCategoryId(undefined); setPage(1); }} />
-          {categories.map((cat) => (
+          {tree.map((cat) => (
             <Chip
               key={cat.id}
               label={cat.name}

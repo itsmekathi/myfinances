@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { DeleteAccountInput, LoginInput, RegisterInput, UserDto, WorkspaceSummaryDto } from '@myfinances/shared';
+import { canWrite } from '@myfinances/shared';
 import { api, onSessionExpired } from '../lib/api';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
@@ -8,7 +9,13 @@ type Status = 'loading' | 'signedOut' | 'signedIn';
 interface AuthState {
   status: Status;
   user: UserDto | null;
+  /** Every workspace the user belongs to. Empty until they create or join one. */
+  workspaces: WorkspaceSummaryDto[];
+  /** The selected workspace (remembered per browser). */
   workspace: WorkspaceSummaryDto | null;
+  selectWorkspace: (id: string) => void;
+  /** Reloads the user and their workspaces, e.g. after creating or joining one. */
+  refreshProfile: () => Promise<void>;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
@@ -19,23 +26,47 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+const SELECTED_KEY = 'mf.workspace';
+
+function readSelected(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeSelected(id: string) {
+  try {
+    localStorage.setItem(SELECTED_KEY, id);
+  } catch {
+    // Private mode or blocked storage: the choice just isn't remembered.
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<Status>('loading');
   const [user, setUser] = useState<UserDto | null>(null);
-  const [workspace, setWorkspace] = useState<WorkspaceSummaryDto | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummaryDto[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(readSelected);
+  const workspace = workspaces.find((w) => w.id === selectedId) ?? workspaces[0] ?? null;
 
   const loadProfile = useCallback(async () => {
     const me = await api.me();
     setUser(me.user);
-    // MVP: one personal workspace. A workspace switcher comes with sharing.
-    setWorkspace(me.workspaces[0] ?? null);
+    setWorkspaces(me.workspaces);
     setStatus('signedIn');
+  }, []);
+
+  const selectWorkspace = useCallback((id: string) => {
+    setSelectedId(id);
+    writeSelected(id);
   }, []);
 
   const signOutLocally = useCallback(() => {
     setUser(null);
-    setWorkspace(null);
+    setWorkspaces([]);
     setStatus('signedOut');
     queryClient.clear();
   }, [queryClient]);
@@ -63,7 +94,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthState = {
     status,
     user,
+    workspaces,
     workspace,
+    selectWorkspace,
+    refreshProfile: loadProfile,
     login: async (input) => {
       await api.auth.login(input);
       await loadProfile();
@@ -100,4 +134,9 @@ export function useWorkspace(): WorkspaceSummaryDto {
   const { workspace } = useAuth();
   if (!workspace) throw new Error('No workspace loaded');
   return workspace;
+}
+
+/** False for viewers: they can read the workspace but not add, edit or delete. */
+export function useCanWrite(): boolean {
+  return canWrite(useAuth().workspace?.role);
 }

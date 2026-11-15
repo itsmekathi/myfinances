@@ -1,0 +1,115 @@
+# Reusable change detection for deploy-staging.yml and deploy-production.yml: works out
+# what changed since the last successful run of the calling workflow on this branch.
+#
+# The diff base is the last *successful* run, not the previous commit, so a failed deploy
+# followed by an unrelated commit still redeploys what failed. There's no base on a
+# branch's first run, or when that commit was force-pushed away; everything counts as
+# changed then (and also with `force`).
+#
+# Outputs (strings 'true' / 'false'):
+#   api   deploy the API (patterns in .github/filters.yml)
+#   web   deploy the web app (patterns in .github/filters.yml)
+#   code  something other than docs changed: checks run their heavy steps
+#
+# The caller must grant `actions: read` (to list runs) and `contents: read`.
+name: Changes
+
+on:
+  workflow_call:
+    inputs:
+      force:
+        description: Treat everything as changed.
+        type: boolean
+        default: false
+    outputs:
+      api:
+        value: ${{ jobs.changes.outputs.api }}
+      web:
+        value: ${{ jobs.changes.outputs.web }}
+      code:
+        value: ${{ jobs.changes.outputs.code }}
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      api: ${{ steps.result.outputs.api }}
+      web: ${{ steps.result.outputs.web }}
+      code: ${{ steps.result.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Find the last successful run
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
+          # In a reusable workflow, github.workflow is the caller's name.
+          WORKFLOW: ${{ github.workflow }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            echo "reason=forced" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sha=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$WORKFLOW" --branch "$BRANCH" \
+            --status success --limit 1 --json headSha --jq '.[0].headSha // ""')
+          if [ -z "$sha" ]; then
+            echo "reason=no earlier successful run on $BRANCH" >> "$GITHUB_OUTPUT"
+          elif ! git cat-file -e "$sha^{commit}" 2>/dev/null || ! git merge-base --is-ancestor "$sha" HEAD; then
+            echo "reason=last successful commit ${sha:0:7} is not in this branch's history" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Match changed paths
+        id: filter
+        if: steps.base.outputs.sha != ''
+        uses: dorny/paths-filter@v3
+        with:
+          base: ${{ steps.base.outputs.sha }}
+          filters: .github/filters.yml
+
+      - name: Decide
+        id: result
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+          REASON: ${{ steps.base.outputs.reason }}
+          API: ${{ steps.filter.outputs.api }}
+          WEB: ${{ steps.filter.outputs.web }}
+        run: |
+          if [ -z "$BASE" ]; then
+            api=true; web=true; code=true
+            echo "### Changes: everything ($REASON)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            api=$API; web=$WEB
+            # Code = any changed file that isn't documentation.
+            if git diff --name-only "$BASE" HEAD \
+                | grep -Ev '(\.md$|^deployment/|^\.github/rulesets/)' | grep -q .; then
+              code=true
+            else
+              code=false
+            fi
+            {
+              echo "### Changes since ${BASE:0:7} (last successful run)"
+              echo
+              echo '```'
+              git diff --name-only "$BASE" HEAD
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          {
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| api | $([ "$api" = true ] && echo deploy || echo skip) |"
+            echo "| web | $([ "$web" = true ] && echo deploy || echo skip) |"
+            echo "| checks | $([ "$code" = true ] && echo full || echo 'skipped (docs only)') |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"

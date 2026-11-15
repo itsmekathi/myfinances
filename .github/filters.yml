@@ -1,0 +1,26 @@
+# Path rules for the deploy workflows (read by .github/workflows/changes.yml via
+# dorny/paths-filter). A filter is true when any changed file matches one of its patterns.
+# Docs-only detection (whether checks run their heavy steps) lives in changes.yml itself,
+# because it needs negated patterns, which these "any match" filters can't use.
+# The root workspace files are in both lists: a dependency bump can change either app.
+
+# Render API: the Docker image builds from apps/api (Dockerfile, prisma/) and packages/shared.
+api:
+  - 'apps/api/**'
+  - 'packages/shared/**'
+  - 'package.json'
+  - 'pnpm-lock.yaml'
+  - 'pnpm-workspace.yaml'
+  - 'tsconfig.base.json'
+  - 'turbo.json'
+
+# Vercel web app (apps/web/vercel.json included).
+web:
+  - 'apps/web/**'
+  - 'packages/shared/**'
+  - 'packages/api-client/**'
+  - 'package.json'
+  - 'pnpm-lock.yaml'
+  - 'pnpm-workspace.yaml'
+  - 'tsconfig.base.json'
+  - 'turbo.json'

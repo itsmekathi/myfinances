@@ -9,11 +9,17 @@ One-time setup for the free-tier hosting and the GitHub Actions deployment pipel
 
 | Event | Checks | Frontend (Vercel) | Backend (Render) | Database (Neon) |
 |---|---|---|---|---|
-| Push to `feature/<name>` | branch name, typecheck, build, Jest e2e, Playwright (local) | **Preview** deploy, unique URL per branch | **Staging** API service | `staging` branch |
+| Push to `feature/<name>` | branch name, typecheck, build, Jest e2e, Playwright (local); only the branch name for docs-only pushes | **Preview** deploy, unique URL per branch | **Staging** API service | `staging` branch |
 | Push or merge to `main` | same | **Production** deploy | **Production** API service | `main` branch |
 
-There are two workflows: `.github/workflows/deploy-staging.yml` (every branch except `main`) and `.github/workflows/deploy-production.yml` (`main`). Each runs four jobs: `checks`, then `api` and `web` in parallel, then `e2e`:
+There are two workflows: `.github/workflows/deploy-staging.yml` (every branch except `main`) and `.github/workflows/deploy-production.yml` (`main`). Each runs five jobs: `changes`, `checks`, then `api` and `web` in parallel, then `e2e`:
 
+0. **`changes`** (the reusable `.github/workflows/changes.yml`)
+   - Finds the commit of the workflow's last successful run on the branch, and the files changed since.
+   - `api` deploys only if API paths changed, and `web` only if web paths changed (`.github/filters.yml`). Changes to the shared packages and the root workspace files count for both.
+   - If only docs changed, `checks` skips every step after the branch-name check.
+   - A branch's first run, a force push, or **Run workflow → force** deploys everything. The job summary shows what it decided and why.
+   - A skipped `api` or `web` job never asks for environment approval.
 1. **`checks`** (the reusable `.github/workflows/checks.yml`, shown as `checks / checks`)
    - Checks the branch name.
    - Runs `pnpm typecheck`, `pnpm build` and `pnpm test:e2e`.
@@ -29,8 +35,8 @@ There are two workflows: `.github/workflows/deploy-staging.yml` (every branch ex
 3. **`web`** (runs alongside `api` after `checks`, so one approval releases both)
    - Points the `/api` forwarding in `vercel.json` at the matching API (staging or production).
    - Runs `vercel build` and `vercel deploy --prebuilt`, adding `--prod` in the production workflow.
-4. **`e2e`** (the reusable `.github/workflows/e2e.yml`; runs after `api` and `web` when the Render hook was called)
-   - Waits until the API's `/api/health/live` reports the commit just deployed (the image carries it as `GIT_SHA`).
+4. **`e2e`** (the reusable `.github/workflows/e2e.yml`; runs after `api` and `web` when either one deployed)
+   - After an API deploy, waits until the API's `/api/health/live` reports the commit just deployed (the image carries it as `GIT_SHA`).
    - Runs the Playwright `api` and `ui` suites against that environment. See [section 11](#11-playwright-end-to-end-tests).
 
 On staging, a newer push to the same branch cancels the older run. Production runs queue instead, so a deploy is never cancelled halfway.
@@ -438,8 +444,9 @@ Either suite can run against `local`, `staging` or `production`. Details are in 
 
 | Trigger | Target | Where |
 |---|---|---|
-| Every push | `local`: the built API and web app on the runner, with Postgres | `checks / checks` |
-| After an approved deploy | `staging` or `production`, once the new commit is live | `e2e` job in the deploy workflows |
+| Every push that changes code | `local`: the built API and web app on the runner, with Postgres | `checks / checks` |
+| After a deploy (only when the API or web app was deployed) | `staging` or `production`, once the new commit is live | `e2e` job in the deploy workflows |
+| Nightly, 02:30 UTC (08:00 IST) | `production`, suite `all` | `e2e.yml` `schedule` (runs from `main`) |
 | Manually: **Actions → E2E (Playwright) → Run workflow** | any target, suite `all`, `api` or `ui` | `e2e.yml` |
 
 **Where to find the results**

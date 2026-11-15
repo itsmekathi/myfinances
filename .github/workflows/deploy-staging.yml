@@ -2,6 +2,8 @@
 # (Render staging API, Vercel preview, Neon `staging` branch).
 # Branch names other than feature/<name> fail the checks. GitHub also blocks
 # creating them via the "Branch naming" ruleset (.github/rulesets/branch-naming.json).
+# Only what changed deploys: changes.yml diffs against the last successful run on the
+# branch (paths in .github/filters.yml). "Run workflow" with force deploys both.
 # Deploy steps are skipped (with a warning) until their secrets are configured.
 # Production lives in deploy-production.yml. Setup: deployment/setup-guide.md
 name: Deploy staging
@@ -10,6 +12,11 @@ on:
   push:
     branches-ignore: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: Deploy the API and web app even if they did not change
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-staging-${{ github.ref }}
@@ -31,14 +38,27 @@ jobs:
           echo "::error::Deploy staging only deploys feature/* branches. Pick one under \"Use workflow from\"."
           exit 1
 
+  # What changed since the last successful run: decides which jobs below do real work.
+  changes:
+    uses: ./.github/workflows/changes.yml
+    permissions:
+      contents: read
+      actions: read
+    with:
+      force: ${{ inputs.force || false }}
+
   checks:
+    needs: changes
     uses: ./.github/workflows/checks.yml
+    with:
+      # Docs-only: the job still reports (required check) but skips build and tests.
+      run: ${{ needs.changes.outputs.code == 'true' }}
 
   api:
     name: api (staging)
     # Guards a manual run on main from deploying main to staging.
-    if: github.ref != 'refs/heads/main'
-    needs: checks
+    if: github.ref != 'refs/heads/main' && needs.changes.outputs.api == 'true'
+    needs: [changes, checks]
     runs-on: ubuntu-latest
     environment: staging
     permissions:
@@ -91,10 +111,13 @@ jobs:
     # Runs alongside api (both after checks) so that, with required reviewers on the
     # environment, one approval releases both jobs. The Render hook only triggers a
     # deploy and doesn't wait for it, so ordering after api guaranteed nothing anyway.
-    if: github.ref != 'refs/heads/main'
-    needs: checks
+    if: github.ref != 'refs/heads/main' && needs.changes.outputs.web == 'true'
+    needs: [changes, checks]
     runs-on: ubuntu-latest
     environment: staging
+    outputs:
+      # true once Vercel deployed; gates the e2e job.
+      deployed: ${{ steps.deploy.outputs.deployed }}
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -146,6 +169,7 @@ jobs:
           vercel build --token="$VERCEL_TOKEN"
           url=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
           echo "Deployed: $url" >> "$GITHUB_STEP_SUMMARY"
       # Gives staging one fixed URL (the latest feature-branch preview), so it can be
       # used as the staging WEB_ORIGIN and as a Google OAuth origin.
@@ -168,15 +192,19 @@ jobs:
           fi
           echo "Staging: https://$DOMAIN" >> "$GITHUB_STEP_SUMMARY"
 
-  # Playwright suites against the new deployment. Waits until the API serves this commit
-  # (the Render hook returns before the deploy is live). Skipped when nothing was deployed.
+  # Playwright suites against the new deployment, when the API or the web app was deployed
+  # (both may be skipped as unchanged). After an API deploy it first waits until the API
+  # serves this commit (the Render hook returns before the deploy is live); a Vercel
+  # deploy is already live when `vercel deploy` returns.
   e2e:
     name: e2e (staging)
     needs: [api, web]
-    if: needs.api.outputs.deployed == 'true'
+    if: >-
+      !cancelled() && !contains(needs.*.result, 'failure') &&
+      (needs.api.outputs.deployed == 'true' || needs.web.outputs.deployed == 'true')
     uses: ./.github/workflows/e2e.yml
     with:
       target: staging
       suite: all
-      expected-sha: ${{ github.sha }}
+      expected-sha: ${{ needs.api.outputs.deployed == 'true' && github.sha || '' }}
     secrets: inherit

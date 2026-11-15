@@ -1,8 +1,12 @@
-import { newCredentials } from '../../src/data';
-import { expect, rememberAccount, test } from '../../src/fixtures';
+import type { Response } from '@playwright/test';
+import { newCredentials, uniqueTag } from '../../src/data';
+import { clickRateLimited, expect, rememberAccount, test } from '../../src/fixtures';
+
+const isRegister = (res: Response) =>
+  res.request().method() === 'POST' && new URL(res.url()).pathname === '/api/auth/register';
 
 test.describe('sign-up and sign-in', () => {
-  test('signs up with the form and lands on the dashboard', async ({ page }) => {
+  test('signs up with the form, creates a household and lands on the dashboard', async ({ page }) => {
     const creds = newCredentials('ui-signup');
     rememberAccount(creds); // global teardown deletes it
     await page.goto('/login');
@@ -11,7 +15,16 @@ test.describe('sign-up and sign-in', () => {
     await page.getByLabel('Email').fill(creds.email);
     await page.getByLabel('Username').fill(creds.username);
     await page.getByLabel('Password').fill(creds.password);
-    await page.getByRole('button', { name: 'Create account' }).click();
+    // Registration is rate limited (10/min per IP) and other tests register users too.
+    const res = await clickRateLimited(page, page.getByRole('button', { name: 'Create account' }), isRegister);
+    expect(res.status()).toBe(201);
+
+    // No household yet: pick "create" or "join".
+    await expect(page).toHaveURL(/\/welcome$/);
+    await expect(page.getByRole('heading', { name: /^Welcome/ })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /Create a household/ })).toBeChecked();
+    await page.getByLabel('Household name').fill(uniqueTag('ui-home'));
+    await page.getByRole('button', { name: 'Create household' }).click();
 
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
     await expect(page.getByText(creds.email)).toBeVisible();

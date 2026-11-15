@@ -52,7 +52,7 @@ type TestFixtures = {
   /** The worker's user with an authenticated client. Tests share its workspace, so use unique names. */
   account: Account;
   /** Registers a brand-new user for this test only; global teardown deletes it. */
-  newAccount: (label?: string) => Promise<Account>;
+  newAccount: (label?: string, opts?: { workspace?: boolean }) => Promise<Account>;
   /** A page signed in as `account`. */
   loggedInPage: Page;
 };
@@ -97,7 +97,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   newAccount: async ({ api }, use) => {
-    await use(async (label = 'n') => withClient(await registerAccount(api, label), api));
+    await use(async (label = 'n', opts) => withClient(await registerAccount(api, label, opts), api));
   },
 
   loggedInPage: async ({ page, account, metrics }, use) => {
@@ -169,7 +169,8 @@ export async function signIn(
   const res = await api.post('/api/auth/login', { identifier: account.email, password: account.password });
   await expectJson(res, 200);
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  // Users without a household land on "welcome" instead.
+  await expect(page.getByRole('heading', { name: /^(Dashboard|Welcome)/ })).toBeVisible();
 }
 
 /**
@@ -193,3 +194,15 @@ export async function clickRateLimited(
 }
 
 export { expect, rememberAccount, type AccountData };
+
+/**
+ * Navigates inside the running app (React Router), without a page load. A full load calls
+ * /api/auth/refresh to restore the session, which is rate limited (30/min per IP) and gets
+ * busy when the whole suite runs. Use page.goto() only to test real page loads.
+ */
+export async function goInApp(page: Page, path: string): Promise<void> {
+  await page.evaluate((p) => {
+    window.history.pushState({}, '', p);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, path);
+}

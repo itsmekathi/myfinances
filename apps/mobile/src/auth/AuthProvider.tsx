@@ -2,14 +2,23 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { useQueryClient } from '@tanstack/react-query';
 import type { DeleteAccountInput, LoginInput, RegisterInput, UserDto, WorkspaceSummaryDto } from '@myfinances/shared';
 import { api, onSessionExpired } from '../lib/api';
+import * as SecureStore from 'expo-secure-store';
 import { googleSignOut } from '../lib/google';
+
+const SELECTED_KEY = 'mf.workspace';
 
 type Status = 'loading' | 'signedOut' | 'signedIn';
 
 interface AuthState {
   status: Status;
   user: UserDto | null;
+  /** Every workspace the user belongs to. Empty until they create or join one. */
+  workspaces: WorkspaceSummaryDto[];
+  /** The selected workspace (remembered on the device). */
   workspace: WorkspaceSummaryDto | null;
+  selectWorkspace: (id: string) => void;
+  /** Reloads the user and their workspaces, e.g. after creating or joining one. */
+  refreshProfile: () => Promise<void>;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
@@ -24,18 +33,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<Status>('loading');
   const [user, setUser] = useState<UserDto | null>(null);
-  const [workspace, setWorkspace] = useState<WorkspaceSummaryDto | null>(null);
+  const [workspaces, setWorkspaces] = useState<WorkspaceSummaryDto[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const workspace = workspaces.find((w) => w.id === selectedId) ?? workspaces[0] ?? null;
 
   const loadProfile = useCallback(async () => {
-    const me = await api.me();
+    const [me, saved] = await Promise.all([api.me(), SecureStore.getItemAsync(SELECTED_KEY).catch(() => null)]);
     setUser(me.user);
-    setWorkspace(me.workspaces[0] ?? null);
+    setWorkspaces(me.workspaces);
+    setSelectedId((current) => current ?? saved);
     setStatus('signedIn');
+  }, []);
+
+  const selectWorkspace = useCallback((id: string) => {
+    setSelectedId(id);
+    void SecureStore.setItemAsync(SELECTED_KEY, id).catch(() => undefined);
   }, []);
 
   const signOutLocally = useCallback(() => {
     setUser(null);
-    setWorkspace(null);
+    setWorkspaces([]);
+    setSelectedId(null);
     setStatus('signedOut');
     queryClient.clear();
   }, [queryClient]);
@@ -62,7 +80,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthState = {
     status,
     user,
+    workspaces,
     workspace,
+    selectWorkspace,
+    refreshProfile: loadProfile,
     login: async (input) => {
       await api.auth.login(input);
       await loadProfile();

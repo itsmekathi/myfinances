@@ -12,6 +12,46 @@ test.describe('categories', () => {
     expect(cats.filter((c) => c.parentId === food!.id).length).toBeGreaterThanOrEqual(3);
   });
 
+  test('new workspaces get income and investment defaults too, filterable by kind', async ({ account }) => {
+    const income = await expectJson<CategoryDto[]>(await account.api.get(`${account.base}/categories?kind=income`), 200);
+    expect(income.every((c) => c.kind === 'income')).toBe(true);
+    const salary = income.find((c) => c.name === 'Salary' && !c.parentId);
+    expect(salary).toBeDefined();
+    expect(income.some((c) => c.parentId === salary!.id && c.name === 'Bonus')).toBe(true);
+
+    const investment = await expectJson<CategoryDto[]>(
+      await account.api.get(`${account.base}/categories?kind=investment`),
+      200,
+    );
+    expect(investment.find((c) => c.name === 'Mutual funds' && !c.parentId)).toBeDefined();
+    expect(investment.every((c) => c.kind === 'investment')).toBe(true);
+
+    // Without a filter, every kind comes back.
+    const all = await account.categories();
+    expect(new Set(all.map((c) => c.kind))).toEqual(new Set(['expense', 'income', 'investment']));
+  });
+
+  test('names are unique per kind, and subcategories take their parent\'s kind', async ({ account }) => {
+    const url = `${account.base}/categories`;
+    const food = (await account.categories()).find((c) => c.kind === 'expense' && c.name === 'Food & Dining')!;
+    const name = uniqueTag('kind');
+
+    const expense = await expectJson<CategoryDto>(await account.api.post(url, { name }), 201);
+    const income = await expectJson<CategoryDto>(await account.api.post(url, { name, kind: 'income' }), 201);
+    try {
+      expect(expense.kind).toBe('expense');
+      expect(income.kind).toBe('income');
+      await expectStatus(await account.api.post(url, { name: name.toUpperCase(), kind: 'income' }), 409);
+
+      const child = await expectJson<CategoryDto>(await account.api.post(url, { name: 'Child', parentId: income.id }), 201);
+      expect(child.kind).toBe('income');
+      await expectStatus(await account.api.post(url, { name: 'Mixed', parentId: food.id, kind: 'investment' }), 400);
+    } finally {
+      await account.api.delete(`${url}/${expense.id}`);
+      await account.api.delete(`${url}/${income.id}`);
+    }
+  });
+
   test('creates, renames and deletes categories; deleting a parent removes its children', async ({ account }) => {
     const url = `${account.base}/categories`;
     const name = uniqueTag('cat');

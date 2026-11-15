@@ -160,7 +160,7 @@ test.describe('expenses', () => {
     const t = tracker(account);
     try {
       const created = await t.create({ amountMinor: 100 }, { 'User-Agent': CHROME_UA });
-      expect(created.createdBy.displayName).toBeTruthy();
+      expect(created.createdBy?.displayName).toBeTruthy();
       expect(created.createdClient).toMatchObject({ type: 'web', browser: 'Chrome', os: 'Windows' });
       expect(created.updatedBy).toBeNull();
 
@@ -172,7 +172,7 @@ test.describe('expenses', () => {
         ),
         200,
       );
-      expect(updated.updatedBy?.displayName).toBe(created.createdBy.displayName);
+      expect(updated.updatedBy?.displayName).toBe(created.createdBy?.displayName);
       expect(updated.updatedClient).toMatchObject({ type: 'android', appVersion: '0.1.0' });
     } finally {
       await t.cleanup();

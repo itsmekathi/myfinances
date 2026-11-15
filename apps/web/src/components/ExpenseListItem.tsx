@@ -1,7 +1,8 @@
 import { Link } from 'react-router';
 import { Clock, ListOrdered, Paperclip } from 'lucide-react';
-import { formatMoney, type CategoryDto, type ExpenseDto } from '@myfinances/shared';
+import type { CategoryDto, ExpenseDto } from '@myfinances/shared';
 import { formatDay } from '../lib/dates';
+import { KindAmount } from '../lib/kinds';
 import { CategoryIcon } from './CategoryIcon';
 
 /** One expense row, linking to its editor. Used on the dashboard and the expenses list. */
@@ -69,7 +70,7 @@ export function ExpenseListItem({
             ))}
           </p>
         </div>
-        <span className="text-sm font-semibold tabular-nums">{formatMoney(e.amountMinor, e.currency)}</span>
+        <KindAmount kind="expense" amountMinor={e.amountMinor} currency={e.currency} />
       </Link>
     </li>
   );

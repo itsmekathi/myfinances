@@ -1,6 +1,11 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { statsQuerySchema, type StatsQuery, type StatsSummary } from '@myfinances/shared';
+import {
+  statsQuerySchema,
+  type CategoryTotal,
+  type StatsQuery,
+  type StatsSummary,
+} from '@myfinances/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { WorkspaceGuard } from '../workspaces/workspace.guard';
 import { CurrentWorkspace, type WorkspaceContext } from '../common/request-context';
@@ -16,8 +21,8 @@ export class StatsController {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Totals for the dashboard. Only expenses in the workspace's base currency are summed;
-   * multi-currency conversion comes later.
+   * Totals for the dashboard: expenses, income and investments. Only amounts in the workspace's
+   * base currency are summed; multi-currency conversion comes later.
    */
   @Get('summary')
   async summary(
@@ -36,10 +41,11 @@ export class StatsController {
       date: { gte: from, lte: to },
     };
 
-    const [agg, byCategory, byDay, categories] = await Promise.all([
+    const [agg, byCategory, byDay, entriesByCategory, categories] = await Promise.all([
       this.prisma.expense.aggregate({ where, _sum: { amountMinor: true }, _count: true }),
       this.prisma.expense.groupBy({ by: ['categoryId'], where, _sum: { amountMinor: true } }),
       this.prisma.expense.groupBy({ by: ['date'], where, _sum: { amountMinor: true } }),
+      this.prisma.entry.groupBy({ by: ['kind', 'categoryId'], where, _sum: { amountMinor: true } }),
       this.prisma.category.findMany({
         where: { workspaceId: ws.workspaceId },
         select: { id: true, name: true, color: true },
@@ -48,15 +54,9 @@ export class StatsController {
 
     const catById = new Map(categories.map((c) => [c.id, c]));
     const dayTotals = new Map(byDay.map((d) => [formatIsoDate(d.date), Number(d._sum.amountMinor ?? 0)]));
-
-    return {
-      currency: ws.baseCurrency,
-      from: q.from,
-      to: q.to,
-      totalMinor: Number(agg._sum.amountMinor ?? 0),
-      count: agg._count,
-      byCategory: byCategory
-        .map((row) => {
+    const categoryTotals = (rows: Array<{ categoryId: string | null; _sum: { amountMinor: bigint | null } }>) =>
+      rows
+        .map((row): CategoryTotal => {
           const cat = row.categoryId ? catById.get(row.categoryId) : undefined;
           return {
             categoryId: row.categoryId,
@@ -65,7 +65,28 @@ export class StatsController {
             totalMinor: Number(row._sum.amountMinor ?? 0),
           };
         })
-        .sort((a, b) => b.totalMinor - a.totalMinor),
+        .sort((a, b) => b.totalMinor - a.totalMinor);
+    const sum = (rows: CategoryTotal[]) => rows.reduce((total, r) => total + r.totalMinor, 0);
+
+    const expensesMinor = Number(agg._sum.amountMinor ?? 0);
+    const incomeByCategory = categoryTotals(entriesByCategory.filter((r) => r.kind === 'income'));
+    const investmentsByCategory = categoryTotals(entriesByCategory.filter((r) => r.kind === 'investment'));
+    const incomeMinor = sum(incomeByCategory);
+    const investedMinor = sum(investmentsByCategory);
+
+    return {
+      currency: ws.baseCurrency,
+      from: q.from,
+      to: q.to,
+      totalMinor: expensesMinor,
+      count: agg._count,
+      expensesMinor,
+      incomeMinor,
+      investedMinor,
+      netMinor: incomeMinor - expensesMinor - investedMinor,
+      incomeByCategory,
+      investmentsByCategory,
+      byCategory: categoryTotals(byCategory),
       byDay: Array.from({ length: days }, (_, i) => {
         const date = formatIsoDate(addDays(from, i));
         return { date, totalMinor: dayTotals.get(date) ?? 0 };

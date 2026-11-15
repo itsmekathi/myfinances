@@ -22,7 +22,7 @@ export default function AccountScreen() {
   function confirmDelete() {
     Alert.alert(
       'Delete your account?',
-      'Your workspace and all its expenses, categories and attachments will be deleted permanently. This cannot be undone.',
+      'Your account and every household only you belong to will be deleted permanently. You will be removed from shared households. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -64,7 +64,9 @@ export default function AccountScreen() {
         <Card style={{ gap: 12 }}>
           <Text style={{ color: c.danger, fontSize: 17, fontWeight: '700' }}>Delete account</Text>
           <Text style={{ color: c.muted, fontSize: 14 }}>
-            Permanently deletes your account, your workspace, and all its expenses, categories and attachments.
+            Permanently deletes your account and every household where you're the only member, with all its data. You're
+            removed from households you share; what you added there stays, without your name. If you own a shared
+            household, make someone else the owner first.
           </Text>
           <TextField
             label={`Type your email (${user.email}) to confirm`}

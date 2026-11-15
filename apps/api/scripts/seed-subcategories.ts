@@ -1,5 +1,5 @@
 /**
- * One-off backfill: adds the default categories/subcategories to every existing workspace.
+ * Backfill: adds the default expense, income and investment categories to every existing workspace.
  * Idempotent. Run with: pnpm --filter @myfinances/api seed:subcategories
  */
 import 'dotenv/config';

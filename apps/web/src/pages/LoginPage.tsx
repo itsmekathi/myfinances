@@ -53,7 +53,7 @@ export function LoginPage() {
           <h1 className="text-4xl leading-tight font-bold">Know where your money goes.</h1>
           <ul className="space-y-4 text-brand-100">
             <Feature icon={BarChart3} text="Beautiful dashboards of your spending" />
-            <Feature icon={Users} text="Share finances with family (coming soon)" />
+            <Feature icon={Users} text="Share a household with your family" />
             <Feature icon={ShieldCheck} text="Your data, secured and private" />
           </ul>
         </div>

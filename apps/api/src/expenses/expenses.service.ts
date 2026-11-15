@@ -205,10 +205,11 @@ export class ExpensesService {
     const ids = subcategoryId ? [categoryId, subcategoryId] : [categoryId];
     const found = await this.prisma.category.findMany({
       where: { id: { in: ids }, workspaceId: ws.workspaceId },
-      select: { id: true, parentId: true },
+      select: { id: true, parentId: true, kind: true },
     });
     const cat = found.find((c) => c.id === categoryId);
     if (!cat) throw new BadRequestException('Category not found in this workspace');
+    if (cat.kind !== 'expense') throw new BadRequestException('Choose an expense category');
     if (cat.parentId) throw new BadRequestException('categoryId must be a top-level category');
     if (subcategoryId) {
       const sub = found.find((c) => c.id === subcategoryId);

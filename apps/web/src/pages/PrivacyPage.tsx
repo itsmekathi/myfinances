@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { CONTACT_EMAIL, OPERATOR_NAME, PublicShell } from '../components/PublicShell';
 
-const EFFECTIVE_DATE = '14 November 2026';
+const EFFECTIVE_DATE = '15 November 2026';
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -29,7 +29,7 @@ export function PrivacyPage() {
         </header>
 
         <p>
-          MyFinances is an expense tracker operated by {OPERATOR_NAME} ("we", "us"). This policy explains what
+          MyFinances is a personal finance tracker for expenses, income and investments, operated by {OPERATOR_NAME} ("we", "us"). This policy explains what
           information MyFinances collects, how it is used, and the choices you have. It applies to the MyFinances website
           and mobile app.
         </p>
@@ -46,10 +46,11 @@ export function PrivacyPage() {
           </p>
           <p>
             <strong>Data you enter.</strong> The expenses you record (amounts, currencies, dates, notes, line items and
+            tags), the income and investment contributions you record (amounts, currencies, dates, sources, notes and
             tags), your categories, and any receipts or documents you attach.
           </p>
           <p>
-            <strong>Technical information.</strong> When you create or edit an expense we record the type of device,
+            <strong>Technical information.</strong> When you create or edit an expense, income or investment entry we record the type of device,
             browser or app version used, so you can see where a change came from. Your IP address is used briefly to
             protect the service from abuse (rate limiting). Our hosting providers may keep standard request logs for a
             limited time for security and troubleshooting.
@@ -59,7 +60,7 @@ export function PrivacyPage() {
         <Section title="How we use it">
           <ul>
             <li>To create your account, sign you in and keep you signed in.</li>
-            <li>To store, show and calculate summaries of the expenses you enter.</li>
+            <li>To store, show and calculate summaries of the expenses, income and investments you enter.</li>
             <li>To keep the service secure and working.</li>
           </ul>
           <p>
@@ -95,7 +96,7 @@ export function PrivacyPage() {
         <Section title="Service providers">
           <p>Your data is processed by these providers on our behalf, only to run MyFinances:</p>
           <ul>
-            <li>Neon: database hosting (accounts and expenses).</li>
+            <li>Neon: database hosting (accounts, expenses, income and investments).</li>
             <li>Cloudflare R2: storage for attached files.</li>
             <li>Render: hosting for the MyFinances server.</li>
             <li>Vercel: hosting for the MyFinances website.</li>
@@ -106,10 +107,23 @@ export function PrivacyPage() {
 
         <Section title="Sharing">
           <p>
-            Your data is private to your workspace. If you share a workspace with other people (when that feature is
-            available), they can see that workspace's expenses and attachments. We may disclose information if required
-            by law.
+            Your financial data is private to your household (workspace). Everyone you let into a household can see its
+            expenses, income, investments and attachments; viewers can only read them, while editors, admins and the
+            owner can also change them. Each record shows who added or last edited it.
           </p>
+          <p>
+            <strong>Finding households.</strong> To let people ask to join, every signed-in user can search households
+            by name. Search results show the household's name, its currency, how many members it has, and the display
+            names of its owner and admins. They never show any financial data.
+          </p>
+          <p>
+            <strong>Join requests.</strong> When you ask to join a household, its owner and admins, and the site
+            administrators, see your display name, email address and any message you write, so they can decide whether
+            to let you in. Site administrators can approve or reject requests for any household, but this does not give
+            them access to its data.
+          </p>
+          <p>When you are a member, the other members can see your display name, email address and role.</p>
+          <p>We may disclose information if required by law.</p>
         </Section>
 
         <Section title="Security">
@@ -123,8 +137,11 @@ export function PrivacyPage() {
         <Section title="Keeping and deleting your data">
           <p>
             We keep your information for as long as your account exists. Deleting an expense also deletes its attached
-            files. You can delete your account and all its data at any time under <strong>Account → Delete account</strong>{' '}
-            on the website or in the app; it is deleted immediately. You can also email {mail} from the email address on
+            files. You can delete your account at any time under <strong>Account → Delete account</strong>{' '}
+            on the website or in the app; it is deleted immediately, together with every household where you are the only
+            member and all their data. In households you share with others, you are removed, but the records you added
+            stay for the other members and no longer show your name. If you own a shared household, you must first make
+            another member its owner. You can also email {mail} from the email address on
             your account, and we will delete it within 30 days. Database backups may keep copies for a short additional
             period before they expire.
           </p>
